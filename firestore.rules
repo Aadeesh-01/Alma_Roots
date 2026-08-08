@@ -1,0 +1,158 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ==========================================
+    // CORE RBAC HELPER FUNCTIONS
+    // ==========================================
+    function isAuthed() { return request.auth != null; }
+    
+    // Safely retrieve the user's participant document
+    function getParticipant(instId) {
+      let uid = request.auth != null ? request.auth.uid : 'null_uid';
+      let pDoc = /databases/$(database)/documents/institutes/$(instId)/participants/$(uid);
+      return exists(pDoc) ? get(pDoc).data : {};
+    }
+    
+    function isInstituteMember(instId) {
+      return isAuthed() && exists(/databases/$(database)/documents/institutes/$(instId)/participants/$(request.auth.uid));
+    }
+    
+    function isActiveMember(instId) {
+      let participant = getParticipant(instId);
+      return isInstituteMember(instId) && participant.get('status', 'active') == 'active';
+    }
+    
+    function isAdmin(instId) {
+      let participant = getParticipant(instId);
+      return isInstituteMember(instId) && participant.get('role', '') == 'admin';
+    }
+
+    // ==========================================
+    // GLOBAL COLLECTIONS
+    // ==========================================
+    match /institutes/{instId} {
+      // Allow anyone to read the list of institutes for login/registration
+      allow read: if true;
+      // Creation restricted to super_admins (managed purely backend-side)
+      allow write: if isAuthed() && exists(/databases/$(database)/documents/super_admins/$(request.auth.uid));
+      
+      // ==========================================
+      // PARTICIPANTS (Users)
+      // ==========================================
+      match /participants/{userId} {
+        allow read: if request.auth.uid == userId || isActiveMember(instId) || isAdmin(instId);
+        
+        allow update: if isAdmin(instId) || (
+          request.auth.uid == userId && isActiveMember(instId) &&
+          // PREVENT PRIVILEGE ESCALATION
+          request.resource.data.get('role', resource.data.get('role', 'student')) == resource.data.get('role', 'student') &&
+          request.resource.data.get('status', resource.data.get('status', 'active')) == resource.data.get('status', 'active') &&
+          request.resource.data.get('isDeleted', resource.data.get('isDeleted', false)) == resource.data.get('isDeleted', false) &&
+          request.resource.data.get('instituteId', resource.data.get('instituteId', instId)) == resource.data.get('instituteId', instId)
+        );
+
+        allow create, delete: if isAdmin(instId);
+      }
+      
+      // ==========================================
+      // POSTS (News & Events)
+      // ==========================================
+      match /posts/{postId} {
+        allow read: if isActiveMember(instId) || isAdmin(instId);
+        
+        allow create: if isActiveMember(instId) && 
+          request.resource.data.get('authorUid', '') == request.auth.uid && (
+            isAdmin(instId) ||
+            (getParticipant(instId).get('role', '') in ['student', 'alumni'] && request.resource.data.get('type', '') in ['experience', 'event'])
+          );
+        
+        allow update: if isAdmin(instId) || (
+          isActiveMember(instId) && (
+            // Author can update post content (but not authorship)
+            (resource.data.get('authorUid', '') == request.auth.uid &&
+             request.resource.data.get('authorUid', '') == resource.data.get('authorUid', ''))
+            ||
+            // Any active member can increment/decrement engagement counters during transactions
+            (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount', 'commentCount', 'attendeeCount']))
+          )
+        );
+        
+        allow delete: if isAdmin(instId) || (isActiveMember(instId) && resource.data.get('authorUid', '') == request.auth.uid);
+        
+        match /comments/{commentId} {
+          allow read: if isActiveMember(instId) || isAdmin(instId);
+          allow create: if isActiveMember(instId) && request.resource.data.get('uid', '') == request.auth.uid;
+          allow update: if isAdmin(instId) || (
+            isActiveMember(instId) && resource.data.get('uid', '') == request.auth.uid &&
+            request.resource.data.get('uid', '') == resource.data.get('uid', '')
+          );
+          allow delete: if isAdmin(instId) || (
+            isActiveMember(instId) && resource.data.get('uid', '') == request.auth.uid
+          );
+        }
+
+        match /likes/{userId} {
+          allow read: if isActiveMember(instId) || isAdmin(instId);
+          allow write: if isActiveMember(instId) && request.auth.uid == userId;
+        }
+
+        match /attendees/{userId} {
+          allow read: if isActiveMember(instId) || isAdmin(instId);
+          allow write: if isActiveMember(instId) && request.auth.uid == userId;
+        }
+      }
+      
+      // ==========================================
+      // MESSAGING
+      // ==========================================
+      match /chats/{chatId} {
+        allow read: if isActiveMember(instId) && request.auth.uid in resource.data.get('participants', []);
+        
+        // Prevent array injection for chat creation
+        allow create: if isActiveMember(instId) && 
+                      request.resource.data.get('participants', []).size() == 2 &&
+                      request.auth.uid in request.resource.data.get('participants', []);
+                      
+        // Prevent modifying participants during an update
+        allow update: if isActiveMember(instId) && 
+                      request.auth.uid in resource.data.get('participants', []) &&
+                      request.resource.data.get('participants', []) == resource.data.get('participants', []);
+        
+        match /messages/{messageId} {
+          allow read, write: if isActiveMember(instId) && 
+            request.auth.uid in getAfter(/databases/$(database)/documents/institutes/$(instId)/chats/$(chatId)).data.get('participants', []);
+        }
+      }
+      
+      // ==========================================
+      // ADMIN & QUEUES
+      // ==========================================
+      match /admin_actions/{docId} { 
+        allow read: if isAdmin(instId);
+        // Prevent spoofing audit logs
+        allow create: if isAdmin(instId) && request.resource.data.get('adminUid', '') == request.auth.uid;
+        allow update, delete: if false; // Audit logs should be immutable
+      }
+      
+      match /deletion_queue/{docId} { 
+        allow read, write: if isAdmin(instId); 
+      }
+      
+      // ==========================================
+      // USER REQUESTS
+      // ==========================================
+      match /reactivation_requests/{reqId} {
+        allow create: if request.auth.uid == reqId && request.resource.data.status == 'pending';
+        allow read: if request.auth.uid == reqId || isAdmin(instId);
+        allow update: if isAdmin(instId) || (request.auth.uid == reqId && request.resource.data.status == 'pending');
+        allow delete: if isAdmin(instId);
+      }
+      
+      match /feedback/{feedbackId} {
+        allow create: if isActiveMember(instId);
+        allow read, update, delete: if isAdmin(instId);
+      }
+    }
+  }
+}

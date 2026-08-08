@@ -1,0 +1,55 @@
+name: cs261_project
+description: "A new Flutter project."
+publish_to: 'none' 
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.1.3 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+  cloud_firestore: ^6.0.0
+  firebase_core: ^4.0.0
+  firebase_auth: ^6.0.0
+  firebase_storage: ^13.0.0  
+  image_picker: ^1.1.2
+  cloud_functions: ^6.3.2
+  liquid_swipe: ^3.1.0
+  qr_flutter: ^4.0.0
+  shared_preferences: ^2.2.2 
+  mobile_scanner: ^3.5.6
+  firebase_messaging: ^16.0.2
+  flutter_local_notifications: ^19.4.2
+  intl: ^0.20.2
+  intl_utils: ^2.8.12
+  http: ^1.6.0
+  rxdart: ^0.28.0
+  shimmer: ^3.0.0
+  flutter_slidable: ^4.0.3
+  cached_network_image: ^3.4.1
+  google_fonts: ^8.1.0
+
+dev_dependencies:
+  flutter_launcher_icons: "^0.13.1"
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+# Configuration for the launcher icons package
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/logo.png"
+  adaptive_icon_background: "#FFFFFF" # This adds a clean white background
+  adaptive_icon_foreground: "assets/images/logo.png" # This uses your logo for the foreground
+
+flutter:
+  uses-material-design: true
+
+  # To add assets to your application, add an assets section, like this:
+  assets:
+    - assets/images/
