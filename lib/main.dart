@@ -7,6 +7,8 @@ import 'package:cs261_project/screen/auth.dart';
 import 'package:cs261_project/screen/splash_screen.dart';
 import 'package:cs261_project/service/user_role_dispatcher.dart';
 import 'package:cs261_project/service/theme_service.dart';
+import 'package:cs261_project/service/notification_service.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:cs261_project/theme/app_theme.dart';
 
 final themeService = ThemeService();
@@ -19,9 +21,10 @@ Future<void> main() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
-    print("✅ Firebase initialized successfully!");
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    debugPrint("✅ Firebase initialized successfully!");
   } catch (e) {
-    print("❌ Firebase initialization failed: $e");
+    debugPrint("❌ Firebase initialization failed: $e");
   }
 
   runApp(const MyApp());
@@ -63,7 +66,8 @@ class _MyAppState extends State<MyApp> {
       listenable: themeService,
       builder: (context, _) {
         return MaterialApp(
-          title: 'CS261 Project',
+          navigatorKey: NotificationService.navigatorKey,
+          title: 'Alma Roots',
           debugShowCheckedModeBanner: false,
           theme: AppTheme.lightTheme,
           darkTheme: AppTheme.darkTheme,

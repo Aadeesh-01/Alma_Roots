@@ -117,6 +117,73 @@ describe("Firestore Security Rules", () => {
     await assertFails(chatRef.set({ participants: ['student_uid', 'alumni_uid', 'admin_uid'] }, { merge: true }));
   });
 
+  describe("Message permissions", () => {
+    const chatId = 'alumni_uid_student_uid';
+    const msgPath = (db) => db.collection('institutes').doc('test_inst').collection('chats').doc(chatId).collection('messages');
+
+    beforeEach(async () => {
+      await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        const chat = ctx.firestore().collection('institutes').doc('test_inst').collection('chats').doc(chatId);
+        await chat.set({ participants: ['student_uid', 'alumni_uid'] });
+        await chat.collection('messages').doc('m1').set({ senderId: 'student_uid', text: 'hello', isEdited: false, reactions: {}, deletedBy: {} });
+      });
+    });
+
+    it("participant can send a message as themselves", async () => {
+      const db = testEnv.authenticatedContext('alumni_uid').firestore();
+      await assertSucceeds(msgPath(db).doc('m2').set({ senderId: 'alumni_uid', text: 'hi' }));
+    });
+
+    it("cannot send a message pretending to be the other person", async () => {
+      const db = testEnv.authenticatedContext('alumni_uid').firestore();
+      await assertFails(msgPath(db).doc('m3').set({ senderId: 'student_uid', text: 'fake' }));
+    });
+
+    it("sender can edit their own message", async () => {
+      const db = testEnv.authenticatedContext('student_uid').firestore();
+      await assertSucceeds(msgPath(db).doc('m1').update({ text: 'hello (edited)', isEdited: true }));
+    });
+
+    it("other participant cannot edit someone else's message", async () => {
+      const db = testEnv.authenticatedContext('alumni_uid').firestore();
+      await assertFails(msgPath(db).doc('m1').update({ text: 'rewritten', isEdited: true }));
+    });
+
+    it("other participant can react", async () => {
+      const db = testEnv.authenticatedContext('alumni_uid').firestore();
+      await assertSucceeds(msgPath(db).doc('m1').set({ reactions: { '👍': ['alumni_uid'] } }, { merge: true }));
+    });
+
+    it("participant can 'delete for me' with their own flag", async () => {
+      const db = testEnv.authenticatedContext('alumni_uid').firestore();
+      await assertSucceeds(msgPath(db).doc('m1').set({ deletedBy: { alumni_uid: true } }, { merge: true }));
+    });
+
+    it("cannot hide a message for the other person", async () => {
+      const db = testEnv.authenticatedContext('alumni_uid').firestore();
+      await assertFails(msgPath(db).doc('m1').set({ deletedBy: { student_uid: true } }, { merge: true }));
+    });
+
+    it("nobody can hard-delete a message", async () => {
+      const db = testEnv.authenticatedContext('student_uid').firestore();
+      await assertFails(msgPath(db).doc('m1').delete());
+    });
+
+    it("non-participant cannot read messages", async () => {
+      const db = testEnv.authenticatedContext('admin_uid').firestore();
+      await assertFails(msgPath(db).doc('m1').get());
+    });
+
+    it("first message + new chat in one batch still works", async () => {
+      const db = testEnv.authenticatedContext('admin_uid').firestore();
+      const chat = db.collection('institutes').doc('test_inst').collection('chats').doc('admin_uid_student_uid');
+      const batch = db.batch();
+      batch.set(chat.collection('messages').doc(), { senderId: 'admin_uid', text: 'welcome' });
+      batch.set(chat, { participants: ['admin_uid', 'student_uid'] }, { merge: true });
+      await assertSucceeds(batch.commit());
+    });
+  });
+
   it("Student Profile edit (cannot change role)", async () => {
     const db = testEnv.authenticatedContext('student_uid').firestore();
     await assertFails(db.collection('institutes').doc('test_inst').collection('participants').doc('student_uid').update({
@@ -145,9 +212,10 @@ describe("Firestore Security Rules", () => {
     }));
   });
 
-  it("Alumni Cannot create event", async () => {
+  // Students and alumni may post events (hackathons, workshops); only news is admin-only.
+  it("Alumni Can create event", async () => {
     const db = testEnv.authenticatedContext('alumni_uid').firestore();
-    await assertFails(db.collection('institutes').doc('test_inst').collection('posts').doc('post3').set({
+    await assertSucceeds(db.collection('institutes').doc('test_inst').collection('posts').doc('post3').set({
       authorUid: 'alumni_uid',
       type: 'event'
     }));

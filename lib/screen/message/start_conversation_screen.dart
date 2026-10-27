@@ -32,7 +32,7 @@ class _StartConversationScreenState extends State<StartConversationScreen> {
   String _selectedFilter = 'All';
 
   final List<String> _filters = [
-    'All', 'Students', 'Alumni', 'Admins'
+    'All', 'Students', 'Alumni', 'Admins', 'Mentors', 'Hiring', 'Networking'
   ];
 
   @override

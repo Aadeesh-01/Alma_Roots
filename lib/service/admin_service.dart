@@ -55,6 +55,33 @@ class AdminService {
     await batch.commit();
   }
 
+  /// Adds writes to [batch] that cancel a pending permanent deletion for [uid],
+  /// so restoring a user can't be followed by the queue deleting them anyway.
+  static Future<void> _cancelPendingDeletionIn(
+      WriteBatch batch, String instituteId, String uid, String adminUid) async {
+    final queueRef = _firestore
+        .collection('institutes')
+        .doc(instituteId)
+        .collection('deletion_queue')
+        .doc(uid);
+    final queueDoc = await queueRef.get();
+    if (queueDoc.exists && queueDoc.data()?['status'] == 'pending') {
+      batch.update(queueRef, {
+        'status': 'cancelled',
+        'cancelledAt': FieldValue.serverTimestamp(),
+        'cancelledBy': adminUid,
+        'notes': 'Cancelled because the user was restored',
+      });
+    }
+  }
+
+  static const Map<String, dynamic> _clearPendingDeletionFields = {
+    'pendingPermanentDeletion': false,
+    'permanentDeletionRequestedAt': null,
+    'permanentDeletionScheduledFor': null,
+    'permanentDeletionRequestedBy': null,
+  };
+
   /// Restores a soft-deleted user
   static Future<void> restoreUser({
     required String instituteId,
@@ -78,7 +105,9 @@ class AdminService {
       'deletedAt': null,
       'deletedBy': null,
       'status': 'active',
+      ..._clearPendingDeletionFields,
     });
+    await _cancelPendingDeletionIn(batch, instituteId, targetUid, currentUser.uid);
 
     // 2. Audit Logging
     final auditRef = _firestore
@@ -155,7 +184,9 @@ class AdminService {
       'status': 'active',
       'deletedAt': null,
       'deletedBy': null,
+      ..._clearPendingDeletionFields,
     });
+    await _cancelPendingDeletionIn(batch, instituteId, targetUid, currentUser.uid);
 
     batch.update(requestRef, {
       'status': 'approved',
@@ -231,7 +262,6 @@ class AdminService {
 
     final batch = _firestore.batch();
     
-    final now = FieldValue.serverTimestamp();
     // In Dart we use a DateTime to compute 24h from now to store in Firestore.
     // However, FieldValue.serverTimestamp() cannot be manipulated in Dart easily before saving.
     // So we use DateTime.now() instead.

@@ -30,12 +30,24 @@ class _NewsEventScreenState extends State<NewsEventScreen> with SingleTickerProv
   late TabController _tabController;
   late Stream<List<NewsEventPost>> _postsStream;
 
+  static const int _pageSize = 20;
+  int _postLimit = _pageSize;
+  // Last page shown, kept on screen while a bigger page loads.
+  List<NewsEventPost>? _lastPosts;
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
-    _postsStream = _service.getPosts(widget.instituteId);
+    _postsStream = _service.getPosts(widget.instituteId, limit: _postLimit, includeDeleted: true);
     _fetchUserRole();
+  }
+
+  void _loadMore() {
+    setState(() {
+      _postLimit += _pageSize;
+      _postsStream = _service.getPosts(widget.instituteId, limit: _postLimit, includeDeleted: true);
+    });
   }
 
   Future<void> _fetchUserRole() async {
@@ -86,7 +98,7 @@ class _NewsEventScreenState extends State<NewsEventScreen> with SingleTickerProv
     );
   }
 
-  Widget _buildFeed(ThemeData theme, List<NewsEventPost> allPosts, String filterType) {
+  Widget _buildFeed(ThemeData theme, List<NewsEventPost> allPosts, String filterType, bool hasMore) {
     var posts = allPosts;
     if (filterType != 'all') {
       posts = posts.where((p) => p.type == filterType).toList();
@@ -101,15 +113,24 @@ class _NewsEventScreenState extends State<NewsEventScreen> with SingleTickerProv
       return false;
     }).toList();
 
-    if (posts.isEmpty) {
+    if (posts.isEmpty && !hasMore) {
       return _buildEmptyFeed(theme, filterType);
     }
 
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
-      itemCount: posts.length,
+      itemCount: posts.length + (hasMore ? 1 : 0),
       separatorBuilder: (_, __) => const SizedBox(height: 14),
       itemBuilder: (context, index) {
+        if (index == posts.length) {
+          return Center(
+            child: OutlinedButton.icon(
+              onPressed: _loadMore,
+              icon: const Icon(Icons.expand_more_rounded),
+              label: const Text('Load older posts'),
+            ),
+          );
+        }
         return _PostCard(
           post: posts[index],
           instituteId: widget.instituteId,
@@ -206,21 +227,25 @@ class _NewsEventScreenState extends State<NewsEventScreen> with SingleTickerProv
             child: StreamBuilder<List<NewsEventPost>>(
               stream: _postsStream,
               builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
                 if (snapshot.hasError) {
                   return Center(child: Text("Error loading posts.", style: TextStyle(color: colorScheme.error)));
                 }
-                final allPosts = snapshot.data ?? [];
+                final raw = snapshot.data ?? _lastPosts;
+                if (raw == null) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                _lastPosts = raw;
+                // A full raw page (deleted posts included) means older posts may exist.
+                final hasMore = raw.length >= _postLimit;
+                final allPosts = raw.where((p) => p.status != 'deleted').toList();
 
                 return TabBarView(
                   controller: _tabController,
                   children: [
-                    _buildFeed(theme, allPosts, 'all'),
-                    _buildFeed(theme, allPosts, 'news'),
-                    _buildFeed(theme, allPosts, 'event'),
-                    _buildFeed(theme, allPosts, 'experience'),
+                    _buildFeed(theme, allPosts, 'all', hasMore),
+                    _buildFeed(theme, allPosts, 'news', hasMore),
+                    _buildFeed(theme, allPosts, 'event', hasMore),
+                    _buildFeed(theme, allPosts, 'experience', hasMore),
                   ],
                 );
               },

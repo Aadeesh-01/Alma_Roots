@@ -74,9 +74,9 @@ class _AuthScreenState extends State<AuthScreen>
           _selectedInstituteId = _institutes.first['id'];
         }
       });
-      print("✅ Institutes loaded: ${_institutes.length}");
+      debugPrint("✅ Institutes loaded: ${_institutes.length}");
     } catch (e) {
-      print("❌ Failed to load institutes: $e");
+      debugPrint("❌ Failed to load institutes: $e");
       _showError("Failed to load institutes.");
     }
   }
@@ -106,9 +106,6 @@ class _AuthScreenState extends State<AuthScreen>
       final email = _emailCtrl.text.trim();
       final password = _passwordCtrl.text.trim();
 
-      print("--- LOGIN START ---");
-      print("Email: $email");
-      print("Institute ID: $_selectedInstituteId");
 
       final userCredential = await _auth.signInWithEmailAndPassword(
         email: email,
@@ -117,7 +114,6 @@ class _AuthScreenState extends State<AuthScreen>
       final user = userCredential.user;
       if (user == null) throw Exception("User is null after login");
 
-      print("✅ Auth success: ${user.uid}");
 
       final participantRef = _firestore
           .collection('institutes')
@@ -128,16 +124,14 @@ class _AuthScreenState extends State<AuthScreen>
       final participantDoc = await participantRef.get();
 
       if (!participantDoc.exists) {
-        print("🚨 No participant document found for this user.");
+        debugPrint("🚨 No participant document found for this user.");
         await FirebaseAuth.instance.signOut();
         throw Exception('User not registered under this institute.');
       }
 
-      print("✅ Firestore doc found: ${participantDoc.data()}");
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('lastInstituteId', _selectedInstituteId!);
-      print("🏫 Saved lastInstituteId: $_selectedInstituteId");
 
       if (!mounted) return;
 
@@ -195,10 +189,10 @@ class _AuthScreenState extends State<AuthScreen>
         ),
       );
     } on FirebaseAuthException catch (e) {
-      print("❌ FirebaseAuth error: ${e.code} - ${e.message}");
+      debugPrint("❌ FirebaseAuth error: ${e.code} - ${e.message}");
       _showError(e.message ?? "Login failed. Check credentials.");
     } catch (e) {
-      print("❌ General login error: $e");
+      debugPrint("❌ General login error: $e");
       _showError(e.toString());
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -375,6 +369,8 @@ class _AuthScreenState extends State<AuthScreen>
             ),
             AppSpacing.gapLg,
             DropdownButtonFormField<String>(
+              // `value` (not initialValue): the institute is pre-selected after the list loads.
+              // ignore: deprecated_member_use
               value: _selectedInstituteId,
               isExpanded: true,
               borderRadius: BorderRadius.circular(14),

@@ -3,7 +3,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cs261_project/model/participant_model.dart';
 import 'package:cs261_project/service/admin_service.dart';
 import 'package:cs261_project/screen/admin/admin_permanent_delete_confirm_screen.dart';
-import 'package:cs261_project/theme/app_spacing.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cs261_project/screen/profile/profile_screen.dart';
+import 'package:cs261_project/theme/app_colors.dart';
+import 'package:cs261_project/widget/app_avatar.dart';
+import 'package:cs261_project/widget/app_section.dart';
+import 'package:cs261_project/widget/app_snackbar.dart';
 
 class AdminParticipantListScreen extends StatefulWidget {
   final String instituteId;
@@ -16,7 +21,9 @@ class AdminParticipantListScreen extends StatefulWidget {
 
 class _AdminParticipantListScreenState extends State<AdminParticipantListScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  bool _showDeleted = false;
+  static const _filters = ['All', 'Students', 'Alumni', 'Admins', 'Inactive'];
+  String _filter = 'All';
+  String _query = '';
 
   void _showPermanentDeleteScreen(ParticipantModel user) async {
     final result = await Navigator.push(
@@ -37,26 +44,32 @@ class _AdminParticipantListScreenState extends State<AdminParticipantListScreen>
 
   Future<void> _toggleUserStatus(ThemeData theme, ParticipantModel user) async {
     final colorScheme = theme.colorScheme;
-    final textTheme = theme.textTheme;
+    final restoring = user.isDeleted || user.status == 'deleted';
+    final name = user.name.isEmpty ? user.email : user.name;
 
-    final action = user.isDeleted ? 'restore' : 'deactivate';
-    
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('${user.isDeleted ? 'Restore' : 'Deactivate'} User?', style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+        icon: Icon(
+          restoring ? Icons.settings_backup_restore_rounded : Icons.person_off_outlined,
+          color: restoring ? colorScheme.primary : colorScheme.error,
+        ),
+        title: Text(restoring ? 'Restore $name?' : 'Deactivate $name?'),
         content: Text(
-          user.isDeleted
-              ? 'This will restore their access and make them visible in searches.'
-              : 'This action will prevent them from logging in and hide them from searches. Type DELETE to confirm (optional for now).',
-          style: textTheme.bodyLarge,
+          restoring
+              ? 'They can log in again and will show up in search. Any scheduled permanent deletion is cancelled.'
+              : 'They will be signed out of the app, hidden from search, and unable to log in until restored.',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: Text('Cancel', style: TextStyle(color: colorScheme.onSurfaceVariant))),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: user.isDeleted ? Colors.green : colorScheme.error, foregroundColor: Colors.white),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              minimumSize: const Size(0, 44),
+              backgroundColor: restoring ? colorScheme.primary : colorScheme.error,
+              foregroundColor: restoring ? colorScheme.onPrimary : colorScheme.onError,
+            ),
             onPressed: () => Navigator.pop(context, true),
-            child: Text(user.isDeleted ? 'Restore' : 'Deactivate'),
+            child: Text(restoring ? 'Restore' : 'Deactivate'),
           ),
         ],
       ),
@@ -65,7 +78,7 @@ class _AdminParticipantListScreenState extends State<AdminParticipantListScreen>
     if (confirm != true) return;
 
     try {
-      if (user.isDeleted) {
+      if (restoring) {
         await AdminService.restoreUser(
           instituteId: widget.instituteId,
           targetUid: user.uid,
@@ -79,18 +92,146 @@ class _AdminParticipantListScreenState extends State<AdminParticipantListScreen>
         );
       }
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: Colors.green, // Success
-          content: Text('User successfully ${user.isDeleted ? 'restored' : 'deactivated'}.'),
-        ),
-      );
+      AppSnackBar.showSuccess(context, restoring ? '$name restored.' : '$name deactivated.');
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(backgroundColor: Theme.of(context).colorScheme.error, content: Text('Error: $e')),
-      );
+      AppSnackBar.showError(context, e.toString().replaceAll('Exception: ', ''));
     }
+  }
+
+  bool _isInactive(ParticipantModel u) => u.isDeleted || u.status != 'active';
+
+  bool _matchesFilter(ParticipantModel u, String filter) {
+    switch (filter) {
+      case 'Students':
+        return !_isInactive(u) && u.role == 'student';
+      case 'Alumni':
+        return !_isInactive(u) && u.role == 'alumni';
+      case 'Admins':
+        return !_isInactive(u) && u.role == 'admin';
+      case 'Inactive':
+        return _isInactive(u);
+      default:
+        return !_isInactive(u);
+    }
+  }
+
+  Widget _statusChip(ThemeData theme, String label, Color color, IconData icon) {
+    final fg = theme.brightness == Brightness.dark ? Color.lerp(color, Colors.white, 0.45)! : color;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: theme.brightness == Brightness.dark ? 0.22 : 0.10),
+        borderRadius: BorderRadius.circular(100),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: fg),
+          const SizedBox(width: 4),
+          Text(label, style: theme.textTheme.labelSmall?.copyWith(color: fg)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUserRow(ThemeData theme, ParticipantModel user) {
+    final cs = theme.colorScheme;
+    final text = theme.textTheme;
+    final tombstone = user.status == 'permanently_deleted';
+    final deactivated = !tombstone && (user.isDeleted || user.status == 'deleted');
+    final pendingPerm = user.pendingPermanentDeletion && !tombstone;
+    final name = user.name.isEmpty ? (user.email.isEmpty ? 'No name' : user.email.split('@').first) : user.name;
+    final isSelf = user.uid == FirebaseAuth.instance.currentUser?.uid;
+
+    return Opacity(
+      opacity: tombstone ? 0.6 : 1,
+      child: AppSurfaceCard(
+        padding: const EdgeInsets.fromLTRB(14, 12, 4, 12),
+        child: Row(
+          children: [
+            AppAvatar(name: name, imageUrl: tombstone ? null : user.profileImage, radius: 23),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(name, style: text.titleSmall, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      ),
+                      if (isSelf) ...[
+                        const SizedBox(width: 6),
+                        Text('(you)', style: text.bodySmall),
+                      ],
+                    ],
+                  ),
+                  if (user.email.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(user.email, style: text.bodySmall, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ],
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      if (!tombstone) RoleBadge(role: user.role, dense: true),
+                      if (tombstone) _statusChip(theme, 'Permanently deleted', cs.onSurfaceVariant, Icons.delete_forever_outlined),
+                      if (deactivated && !pendingPerm) _statusChip(theme, 'Deactivated', AppColors.clay, Icons.block_rounded),
+                      if (pendingPerm) _statusChip(theme, 'Deletion scheduled', cs.error, Icons.timer_outlined),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            if (!tombstone && user.role != 'admin')
+              PopupMenuButton<String>(
+                tooltip: 'Actions',
+                icon: Icon(Icons.more_vert_rounded, color: cs.onSurfaceVariant),
+                onSelected: (v) {
+                  if (v == 'toggle') _toggleUserStatus(theme, user);
+                  if (v == 'permanent') _showPermanentDeleteScreen(user);
+                  if (v == 'profile') {
+                    Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => ProfileScreen(instituteId: widget.instituteId, viewUid: user.uid),
+                    ));
+                  }
+                },
+                itemBuilder: (context) => [
+                  if (!deactivated)
+                    const PopupMenuItem(
+                      value: 'profile',
+                      child: ListTile(leading: Icon(Icons.person_outline_rounded), title: Text('View profile'), contentPadding: EdgeInsets.zero),
+                    ),
+                  PopupMenuItem(
+                    value: 'toggle',
+                    child: ListTile(
+                      leading: Icon(
+                        deactivated ? Icons.settings_backup_restore_rounded : Icons.person_off_outlined,
+                        color: deactivated ? cs.primary : AppColors.clay,
+                      ),
+                      title: Text(deactivated ? 'Restore' : 'Deactivate'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                  if (deactivated && !pendingPerm)
+                    PopupMenuItem(
+                      value: 'permanent',
+                      child: ListTile(
+                        leading: Icon(Icons.delete_forever_outlined, color: cs.error),
+                        title: Text('Delete permanently…', style: TextStyle(color: cs.error)),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                ],
+              )
+            else
+              const SizedBox(width: 12),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -100,27 +241,7 @@ class _AdminParticipantListScreenState extends State<AdminParticipantListScreen>
     final textTheme = theme.textTheme;
 
     return Scaffold(
-      backgroundColor: colorScheme.surface,
-      appBar: AppBar(
-        title: const Text('Manage Participants'),
-        backgroundColor: colorScheme.surface,
-        foregroundColor: colorScheme.onSurface,
-        elevation: 1,
-        shadowColor: theme.dividerColor,
-        actions: [
-          Row(
-            children: [
-              Text('Show Deleted', style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 12)),
-              Switch(
-                value: _showDeleted,
-                activeColor: colorScheme.primary,
-                activeTrackColor: colorScheme.primary.withValues(alpha: 0.5),
-                onChanged: (val) => setState(() => _showDeleted = val),
-              ),
-            ],
-          )
-        ],
-      ),
+      appBar: AppBar(title: const Text('Manage users')),
       body: StreamBuilder<QuerySnapshot>(
         stream: _firestore
             .collection('institutes')
@@ -131,112 +252,89 @@ class _AdminParticipantListScreenState extends State<AdminParticipantListScreen>
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return Center(child: Text("No participants found.", style: textTheme.bodyLarge));
-          }
 
-          final allUsers = snapshot.data!.docs
+          final everyone = (snapshot.data?.docs ?? [])
               .map((doc) => ParticipantModel.fromFirestore(doc))
-              .where((u) => _showDeleted ? true : (!u.isDeleted && u.status != 'deleted'))
-              .toList();
+              .toList()
+            ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
-          return ListView.separated(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            itemCount: allUsers.length,
-            separatorBuilder: (context, index) => AppSpacing.gapSm,
-            itemBuilder: (context, index) {
-              final user = allUsers[index];
-              final isDeleted = user.isDeleted || user.status == 'deleted';
-              final isPendingPermDelete = user.pendingPermanentDeletion;
+          final counts = {
+            for (final f in _filters) f: everyone.where((u) => _matchesFilter(u, f)).length,
+          };
 
-              Color rowBgColor = colorScheme.surface;
-              Color rowBorderColor = theme.dividerColor;
-              
-              if (isPendingPermDelete) {
-                rowBgColor = colorScheme.error.withValues(alpha: 0.1);
-                rowBorderColor = colorScheme.error.withValues(alpha: 0.3);
-              } else if (isDeleted) {
-                rowBgColor = colorScheme.error.withValues(alpha: 0.05);
-                rowBorderColor = colorScheme.error.withValues(alpha: 0.2);
-              }
+          final q = _query.toLowerCase();
+          final visible = everyone.where((u) {
+            if (!_matchesFilter(u, _filter)) return false;
+            if (q.isEmpty) return true;
+            return u.name.toLowerCase().contains(q) || u.email.toLowerCase().contains(q);
+          }).toList();
 
-              return Container(
-                decoration: BoxDecoration(
-                  color: rowBgColor,
-                  border: Border.all(color: rowBorderColor),
-                  borderRadius: BorderRadius.circular(AppSpacing.sm),
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                child: TextField(
+                  onChanged: (v) => setState(() => _query = v.trim()),
+                  decoration: InputDecoration(
+                    hintText: 'Search by name or email',
+                    prefixIcon: const Icon(Icons.search_rounded),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(100),
+                      borderSide: BorderSide(color: colorScheme.outlineVariant),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(100),
+                      borderSide: BorderSide(color: colorScheme.outlineVariant),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(100),
+                      borderSide: BorderSide(color: colorScheme.primary, width: 1.6),
+                    ),
+                  ),
                 ),
-                child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.xs),
-                  leading: CircleAvatar(
-                    backgroundColor: isDeleted ? colorScheme.error.withValues(alpha: 0.1) : colorScheme.primary.withValues(alpha: 0.1),
-                    child: Text(
-                      user.name.isNotEmpty ? user.name[0].toUpperCase() : '?',
-                      style: TextStyle(color: isDeleted ? colorScheme.error : colorScheme.primary, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  title: Text(
-                    user.name.isEmpty ? "No Name" : user.name,
-                    style: textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      decoration: isDeleted ? TextDecoration.lineThrough : null,
-                    ),
-                  ),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      AppSpacing.gapXs,
-                      Text(user.email, style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
-                      AppSpacing.gapXs,
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: colorScheme.secondary.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          user.role.toUpperCase(),
-                          style: textTheme.bodySmall?.copyWith(color: colorScheme.secondary, fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                    ],
-                  ),
-                  trailing: user.role == 'admin'
-                      ? Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: colorScheme.primary.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text('ADMIN', style: textTheme.bodySmall?.copyWith(color: colorScheme.primary, fontWeight: FontWeight.bold)),
-                        )
-                      : Row(
+              ),
+              SizedBox(
+                height: 56,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  itemCount: _filters.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (context, i) {
+                    final f = _filters[i];
+                    return ChoiceChip(
+                      label: Text('$f  ${counts[f]}'),
+                      selected: _filter == f,
+                      showCheckmark: false,
+                      onSelected: (_) => setState(() => _filter = f),
+                    );
+                  },
+                ),
+              ),
+              Expanded(
+                child: visible.isEmpty
+                    ? Center(
+                        child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            if (isDeleted && !isPendingPermDelete)
-                              IconButton(
-                                icon: Icon(Icons.delete_forever, color: colorScheme.error),
-                                tooltip: 'Schedule Permanent Deletion',
-                                onPressed: () => _showPermanentDeleteScreen(user),
-                              ),
-                            if (isPendingPermDelete)
-                              Padding(
-                                padding: const EdgeInsets.only(right: 8.0),
-                                child: Icon(Icons.timer, color: colorScheme.error, size: 20),
-                              ),
-                            IconButton(
-                              icon: Icon(
-                                isDeleted ? Icons.restore : Icons.delete_outline,
-                                color: isDeleted ? Colors.green : colorScheme.error,
-                              ),
-                              tooltip: isDeleted ? 'Restore User' : 'Soft Delete',
-                              onPressed: () => _toggleUserStatus(theme, user),
+                            Icon(Icons.group_off_outlined, size: 40, color: colorScheme.onSurfaceVariant),
+                            const SizedBox(height: 10),
+                            Text(
+                              q.isNotEmpty ? 'No one matches "$_query"' : 'No users here',
+                              style: textTheme.titleMedium,
                             ),
                           ],
                         ),
-                ),
-              );
-            },
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                        itemCount: visible.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        itemBuilder: (context, index) => _buildUserRow(theme, visible[index]),
+                      ),
+              ),
+            ],
           );
         },
       ),

@@ -9,13 +9,8 @@ class AboutScreen extends StatelessWidget {
     final theme = Theme.of(context);
 
     return Scaffold(
-      backgroundColor: theme.colorScheme.surface,
       appBar: AppBar(
         title: const Text('About'),
-        backgroundColor: theme.colorScheme.surface,
-        foregroundColor: theme.colorScheme.onSurface,
-        elevation: 1,
-        shadowColor: theme.dividerColor,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(AppSpacing.lg),
@@ -65,13 +60,13 @@ class AboutScreen extends StatelessWidget {
               color: colorScheme.primary.withValues(alpha: 0.1),
               shape: BoxShape.circle,
             ),
-            child: Icon(Icons.school, size: 64, color: colorScheme.primary),
+            child: ClipOval(child: Image.asset('assets/images/logo.png', width: 96, height: 96, fit: BoxFit.cover)),
           ),
           AppSpacing.gapLg,
           Column(
           children: [
             Text("Alma Roots", style: textTheme.headlineMedium),
-            Text("Version 1.0.0", style: textTheme.titleMedium?.copyWith(color: Colors.grey)),
+            Text("Version 1.0.0", style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
           ],
         ),
         ],

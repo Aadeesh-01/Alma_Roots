@@ -7,6 +7,40 @@
 
 ---
 
+## Status update (2026-10-27, branch `redesign-and-fixes`)
+
+Most findings below have since been fixed. The original text is kept for reference; use this table for the current state.
+
+| Finding | Status |
+|---|---|
+| S1 `addAdminRole` unauthenticated | **Fixed and deployed.** Caller must be an active admin of the institute |
+| S2 Public sign-up | **Your action**: disable "Enable create (sign-up)" in Firebase Auth settings |
+| S3 Cross-institute user creation | **Fixed and deployed.** Server-side check, plus the Add User screen is locked to your institute |
+| S4 Message edit/delete by the other participant | **Fixed and deployed.** Per-field message rules (10 new tests) |
+| S5–S9 Counters, visibility, post type, participant fields, Storage rules | Open |
+| S10 Demo credentials in the app | Open (kept for demos) |
+| S11 Personal data in logs | **Fixed.** Sensitive prints removed, the rest use `debugPrint`; `live_audit.js` deleted |
+| B1 Second participant couldn't reply | **Fixed and deployed** (rules compare participants as a set) |
+| B2 Process Queue wrong region | **Fixed** |
+| B3 Admins couldn't reach Feed/Inbox | **Fixed.** Admin shell with Console / Feed / Inbox / Profile |
+| B4 Messages reset pin/mute/archive | **Fixed** |
+| B5 Tombstones shown as live users | **Fixed** (tombstones carry `isDeleted: true`; "Inactive" filter) |
+| B6 Duplicate `customId` | Open |
+| B7 Institute management broken | **Fixed** (read-only list) |
+| B8 Feed capped at 20 posts | **Fixed** ("Load older posts") |
+| B9 One-way RSVP / no waitlist promotion | **Fixed.** Cancel and leave-waitlist, plus automatic promotion (function written, needs deploy) |
+| B10 Bug reports role "unknown" | **Fixed** |
+| B11 Failing rules test | **Fixed.** 27/27 passing (`npm run test:rules`) |
+| B12 Scheduled deletions mislabelled in audit | **Fixed** (`AUTO_QUEUE_PROCESSING` by `system`) |
+| B13 Deletion uses device clock | Open |
+| B14 Partial rollback on user creation | Open |
+| B15–B19 Small UX bugs | **Fixed** (B17, the admin demo password vs README, still needs checking) |
+| Auto-delete job not deployed | **Fixed and deployed.** Also skips users who were restored |
+| Push notifications | **Built and tested.** Functions need deploying (see Batch 4) |
+| Dead code, unused packages, committed `node_modules` | **Removed**; `flutter analyze` reports no issues; widget test replaced (8 passing) |
+
+---
+
 ## Table of Contents
 
 1. [What the app is](#1-what-the-app-is)

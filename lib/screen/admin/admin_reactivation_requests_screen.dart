@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:cs261_project/service/admin_service.dart';
-import 'package:cs261_project/theme/app_spacing.dart';
+import 'package:cs261_project/widget/app_avatar.dart';
+import 'package:cs261_project/widget/app_empty_state.dart';
+import 'package:cs261_project/widget/app_section.dart';
+import 'package:cs261_project/widget/app_snackbar.dart';
 
 class AdminReactivationRequestsScreen extends StatefulWidget {
   final String instituteId;
@@ -16,31 +19,32 @@ class AdminReactivationRequestsScreen extends StatefulWidget {
 class _AdminReactivationRequestsScreenState extends State<AdminReactivationRequestsScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  Future<void> _handleRequest(ThemeData theme, String requestId, String targetUid, bool approve) async {
+  Future<void> _handleRequest(ThemeData theme, String requestId, String targetUid, String name, bool approve) async {
     final colorScheme = theme.colorScheme;
-    final textTheme = theme.textTheme;
-
-    final action = approve ? 'Approve' : 'Reject';
 
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('$action Request?', style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+        icon: Icon(
+          approve ? Icons.how_to_reg_rounded : Icons.do_not_disturb_on_outlined,
+          color: approve ? colorScheme.primary : colorScheme.error,
+        ),
+        title: Text(approve ? 'Reactivate $name?' : 'Reject request?'),
         content: Text(
           approve
-              ? 'This will restore the user\'s account, allowing them to log in and appear in searches.'
-              : 'This will reject the reactivation request. The user will remain deactivated.',
-          style: textTheme.bodyLarge,
+              ? 'Their account is restored: they can log in and appear in search again. Any scheduled permanent deletion is cancelled.'
+              : 'The request is rejected and $name stays deactivated.',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: Text('Cancel', style: TextStyle(color: colorScheme.onSurfaceVariant))),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: approve ? Colors.green : colorScheme.error,
-              foregroundColor: Colors.white,
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              minimumSize: const Size(0, 44),
+              backgroundColor: approve ? colorScheme.primary : colorScheme.error,
+              foregroundColor: approve ? colorScheme.onPrimary : colorScheme.onError,
             ),
             onPressed: () => Navigator.pop(context, true),
-            child: Text(action, style: const TextStyle(fontWeight: FontWeight.bold)),
+            child: Text(approve ? 'Approve' : 'Reject'),
           ),
         ],
       ),
@@ -63,17 +67,10 @@ class _AdminReactivationRequestsScreenState extends State<AdminReactivationReque
       }
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: Colors.green, // Success
-          content: Text('Request successfully ${approve ? 'approved' : 'rejected'}.'),
-        ),
-      );
+      AppSnackBar.showSuccess(context, approve ? '$name has been reactivated.' : 'Request rejected.');
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(backgroundColor: Theme.of(context).colorScheme.error, content: Text('Error: $e')),
-      );
+      AppSnackBar.showError(context, e.toString().replaceAll('Exception: ', ''));
     }
   }
 
@@ -84,14 +81,7 @@ class _AdminReactivationRequestsScreenState extends State<AdminReactivationReque
     final textTheme = theme.textTheme;
 
     return Scaffold(
-      backgroundColor: colorScheme.surface,
-      appBar: AppBar(
-        title: const Text('Reactivation Requests'),
-        backgroundColor: colorScheme.surface,
-        foregroundColor: colorScheme.onSurface,
-        elevation: 1,
-        shadowColor: theme.dividerColor,
-      ),
+      appBar: AppBar(title: const Text('Reactivation requests')),
       body: StreamBuilder<QuerySnapshot>(
         stream: _firestore
             .collection('institutes')
@@ -108,77 +98,80 @@ class _AdminReactivationRequestsScreenState extends State<AdminReactivationReque
             return Center(child: Text("Error loading requests.", style: TextStyle(color: colorScheme.error)));
           }
           if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return Center(child: Text("No pending reactivation requests.", style: textTheme.bodyLarge));
+            return const AppEmptyState(
+              icon: Icons.inbox_outlined,
+              title: 'No pending requests',
+              message: 'When a deactivated user asks to come back, their request appears here.',
+            );
           }
 
           final requests = snapshot.data!.docs;
 
           return ListView.separated(
-            padding: const EdgeInsets.all(AppSpacing.md),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
             itemCount: requests.length,
-            separatorBuilder: (context, index) => AppSpacing.gapMd,
+            separatorBuilder: (context, index) => const SizedBox(height: 12),
             itemBuilder: (context, index) {
               final req = requests[index].data() as Map<String, dynamic>;
               final requestId = requests[index].id;
               final targetUid = req['userUid'] ?? requestId;
-              final name = req['userName'] ?? 'Unknown';
-              final email = req['userEmail'] ?? 'Unknown Email';
+              final email = (req['userEmail'] as String?) ?? '';
+              final rawName = (req['userName'] as String?)?.trim() ?? '';
+              final name = rawName.isNotEmpty && rawName != 'Unknown'
+                  ? rawName
+                  : (email.isNotEmpty ? email.split('@').first : 'Member');
               final timestamp = req['requestedAt'] as Timestamp?;
               final dateStr = timestamp != null
-                  ? DateFormat('MMM dd, yyyy - hh:mm a').format(timestamp.toDate())
-                  : 'Unknown Date';
+                  ? DateFormat('d MMM yyyy, h:mm a').format(timestamp.toDate())
+                  : 'Unknown date';
 
-              return Container(
-                decoration: BoxDecoration(
-                  color: colorScheme.surface,
-                  border: Border.all(color: theme.dividerColor),
-                  borderRadius: BorderRadius.circular(AppSpacing.sm),
-                ),
-                padding: const EdgeInsets.all(AppSpacing.md),
+              return AppSurfaceCard(
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
+                        AppAvatar(name: name, radius: 22),
+                        const SizedBox(width: 12),
                         Expanded(
-                          child: Text(
-                            name,
-                            style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(name, style: textTheme.titleSmall),
+                              if (email.isNotEmpty) Text(email, style: textTheme.bodySmall),
+                            ],
                           ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF57C00).withValues(alpha: 0.1), // Warning orange
-                            borderRadius: BorderRadius.circular(4),
-                            border: Border.all(color: const Color(0xFFF57C00).withValues(alpha: 0.5)),
-                          ),
-                          child: Text('Pending', style: textTheme.bodySmall?.copyWith(color: const Color(0xFFF57C00), fontWeight: FontWeight.bold)),
                         ),
                       ],
                     ),
-                    AppSpacing.gapXs,
-                    Text(email, style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
-                    AppSpacing.gapSm,
-                    Text('Requested: $dateStr', style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant)),
-                    AppSpacing.gapLg,
+                    const SizedBox(height: 12),
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        OutlinedButton(
-                          onPressed: () => _handleRequest(theme, requestId, targetUid, false),
-                          style: OutlinedButton.styleFrom(foregroundColor: colorScheme.error, side: BorderSide(color: colorScheme.error)),
-                          child: const Text('Reject', style: TextStyle(fontWeight: FontWeight.bold)),
+                        Icon(Icons.schedule_rounded, size: 15, color: colorScheme.onSurfaceVariant),
+                        const SizedBox(width: 6),
+                        Text('Requested $dateStr', style: textTheme.bodySmall),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => _handleRequest(theme, requestId, targetUid, name, false),
+                            style: OutlinedButton.styleFrom(foregroundColor: colorScheme.error),
+                            child: const Text('Reject'),
+                          ),
                         ),
-                        AppSpacing.gapSm,
-                        ElevatedButton(
-                          onPressed: () => _handleRequest(theme, requestId, targetUid, true),
-                          style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
-                          child: const Text('Approve', style: TextStyle(fontWeight: FontWeight.bold)),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: () => _handleRequest(theme, requestId, targetUid, name, true),
+                            style: FilledButton.styleFrom(minimumSize: const Size(0, 48)),
+                            child: const Text('Approve'),
+                          ),
                         ),
                       ],
-                    )
+                    ),
                   ],
                 ),
               );

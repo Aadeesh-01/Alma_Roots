@@ -32,12 +32,12 @@ class _UserRoleDispatcherState extends State<UserRoleDispatcher> {
     try {
       final user = _auth.currentUser;
       if (user == null) {
-        print("❌ No logged-in user found.");
+        debugPrint("❌ No logged-in user found.");
         setState(() => _loading = false);
         return;
       }
 
-      print("🔍 Fetching role for UID: ${user.uid} in ${widget.instituteId}");
+      debugPrint("🔍 Fetching role for UID: ${user.uid} in ${widget.instituteId}");
 
       final doc = await _firestore
           .collection('institutes')
@@ -47,7 +47,7 @@ class _UserRoleDispatcherState extends State<UserRoleDispatcher> {
           .get();
 
       if (!doc.exists) {
-        print("🚨 No participant document found for this user.");
+        debugPrint("🚨 No participant document found for this user.");
         // Clear cached state before signing out
         final prefs = await SharedPreferences.getInstance();
         await prefs.remove('lastInstituteId');
@@ -56,16 +56,16 @@ class _UserRoleDispatcherState extends State<UserRoleDispatcher> {
       }
 
       if (doc.data()?['isDeleted'] == true || doc.data()?['status'] == 'deleted') {
-        print("🚨 Account deactivated.");
+        debugPrint("🚨 Account deactivated.");
         _role = 'deactivated';
         _participantData = doc.data();
         return;
       }
 
       _role = doc['role'] ?? 'student';
-      print("✅ Role fetched: $_role");
+      debugPrint("✅ Role fetched: $_role");
     } catch (e) {
-      print("❌ Error loading user role: $e");
+      debugPrint("❌ Error loading user role: $e");
     } finally {
       if (mounted) setState(() => _loading = false);
     }

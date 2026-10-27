@@ -1,5 +1,5 @@
 name: cs261_project
-description: "A new Flutter project."
+description: "Alma Roots: an alumni networking app for students, alumni and institute admins."
 publish_to: 'none' 
 
 version: 1.0.0+1
@@ -18,16 +18,12 @@ dependencies:
   firebase_storage: ^13.0.0  
   image_picker: ^1.1.2
   cloud_functions: ^6.3.2
-  liquid_swipe: ^3.1.0
   qr_flutter: ^4.0.0
   shared_preferences: ^2.2.2 
   mobile_scanner: ^3.5.6
   firebase_messaging: ^16.0.2
   flutter_local_notifications: ^19.4.2
   intl: ^0.20.2
-  intl_utils: ^2.8.12
-  http: ^1.6.0
-  rxdart: ^0.28.0
   shimmer: ^3.0.0
   flutter_slidable: ^4.0.3
   cached_network_image: ^3.4.1

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cs261_project/theme/app_spacing.dart';
+import 'package:cs261_project/theme/app_colors.dart';
 import 'package:cs261_project/service/feedback_service.dart';
 import 'package:intl/intl.dart';
 
@@ -36,17 +37,9 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
     
     return Scaffold(
-      backgroundColor: colorScheme.surface,
-      appBar: AppBar(
-        title: const Text('Feedback Reports'),
-        backgroundColor: colorScheme.surface,
-        foregroundColor: colorScheme.onSurface,
-        elevation: 1,
-        shadowColor: theme.dividerColor,
-      ),
+      appBar: AppBar(title: const Text('Feedback reports')),
       body: Column(
         children: [
           _buildFilters(theme),
@@ -91,7 +84,7 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen> {
   Widget _buildDropdown(ThemeData theme, String label, String value, List<String> items,
       ValueChanged<String?> onChanged) {
     return DropdownButtonFormField<String>(
-      value: value,
+      initialValue: value,
       isExpanded: true,
       decoration: InputDecoration(
         labelText: label,
@@ -188,10 +181,10 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen> {
         statusColor = colorScheme.error;
         break;
       case 'investigating':
-        statusColor = const Color(0xFFF57C00); // Orange
+        statusColor = AppColors.warning;
         break;
       case 'resolved':
-        statusColor = Colors.green;
+        statusColor = AppColors.success;
         break;
       case 'closed':
         statusColor = colorScheme.onSurfaceVariant;
@@ -201,15 +194,9 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen> {
     }
 
     return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppSpacing.sm),
-        side: BorderSide(color: theme.dividerColor),
-      ),
-      color: colorScheme.surface,
       child: InkWell(
         onTap: () => _showReportDetails(context, theme, id, data, statusColor),
-        borderRadius: BorderRadius.circular(AppSpacing.sm),
+        borderRadius: BorderRadius.circular(20),
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.md),
           child: Column(
@@ -222,8 +209,8 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen> {
                     padding:
                         const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: colorScheme.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(4),
+                      color: colorScheme.primaryContainer,
+                      borderRadius: BorderRadius.circular(100),
                     ),
                     child: Text(category,
                         style: textTheme.bodySmall?.copyWith(
@@ -235,9 +222,7 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen> {
                         const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
                       color: statusColor.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(4),
-                      border:
-                          Border.all(color: statusColor.withValues(alpha: 0.5)),
+                      borderRadius: BorderRadius.circular(100),
                     ),
                     child: Text(status.toUpperCase(),
                         style: textTheme.bodySmall?.copyWith(

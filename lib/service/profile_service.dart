@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cs261_project/model/participant_model.dart';
 import 'package:cs261_project/service/search_service.dart';
@@ -33,7 +34,7 @@ class ProfileService {
       }
       return null;
     } catch (e) {
-      print("Error getting profile: $e");
+      debugPrint("Error getting profile: $e");
       return null;
     }
   }
@@ -74,6 +75,9 @@ class ProfileService {
       if (mergedData['rollNo'] != null) {
         keywords.addAll(SearchService.generateSearchKeywords(mergedData['rollNo']));
       }
+      if (mergedData['department'] != null) {
+        keywords.addAll(SearchService.generateSearchKeywords(mergedData['department']));
+      }
       
       updateData['searchKeywords'] = keywords.toList();
 
@@ -81,7 +85,7 @@ class ProfileService {
           .doc(uid)
           .set(updateData, SetOptions(merge: true));
     } catch (e) {
-      print("Error saving profile: $e");
+      debugPrint("Error saving profile: $e");
       rethrow;
     }
   }
@@ -109,7 +113,7 @@ class ProfileService {
           .where((p) => !p.isDeleted && p.status != 'deleted')
           .toList();
     } catch (e) {
-      print("Error fetching alumni: $e");
+      debugPrint("Error fetching alumni: $e");
       return [];
     }
   }

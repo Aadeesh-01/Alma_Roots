@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cs261_project/theme/app_colors.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cs261_project/theme/app_spacing.dart';
@@ -59,7 +60,12 @@ class _ReportBugScreenState extends State<ReportBugScreen> {
       // Attempt to get user role
       String role = 'unknown';
       try {
-        final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+        final doc = await FirebaseFirestore.instance
+            .collection('institutes')
+            .doc(widget.instituteId)
+            .collection('participants')
+            .doc(user.uid)
+            .get();
         if (doc.exists) {
           role = doc.data()?['role'] ?? 'unknown';
         }
@@ -94,16 +100,10 @@ class _ReportBugScreenState extends State<ReportBugScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      backgroundColor: colorScheme.surface,
       appBar: AppBar(
         title: const Text('Report Bug / Feedback'),
-        backgroundColor: colorScheme.surface,
-        foregroundColor: colorScheme.onSurface,
-        elevation: 1,
-        shadowColor: theme.dividerColor,
       ),
       body: _buildBody(theme),
     );
@@ -136,10 +136,10 @@ class _ReportBugScreenState extends State<ReportBugScreen> {
               Container(
                 padding: const EdgeInsets.all(AppSpacing.lg),
                 decoration: BoxDecoration(
-                  color: Colors.green.withValues(alpha: 0.1),
+                  color: AppColors.success.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.check_circle, color: Colors.green, size: 64),
+                child: const Icon(Icons.check_circle, color: AppColors.success, size: 64),
               ),
               AppSpacing.gapLg,
               Text("Thank You!", style: textTheme.headlineMedium),
@@ -195,7 +195,7 @@ class _ReportBugScreenState extends State<ReportBugScreen> {
             Text("Category", style: textTheme.titleMedium),
             AppSpacing.gapXs,
             DropdownButtonFormField<String>(
-              value: _category,
+              initialValue: _category,
               isExpanded: true,
               decoration: _buildInputDecoration(theme, "Select category"),
               items: _categories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),

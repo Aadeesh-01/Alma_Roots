@@ -122,8 +122,37 @@ service cloud.firestore {
                       request.resource.data.get('participants', []).toSet() == resource.data.get('participants', []).toSet();
         
         match /messages/{messageId} {
-          allow read, write: if isActiveMember(instId) && 
-            request.auth.uid in getAfter(/databases/$(database)/documents/institutes/$(instId)/chats/$(chatId)).data.get('participants', []);
+          function chatPath() {
+            return /databases/$(database)/documents/institutes/$(instId)/chats/$(chatId);
+          }
+          // getAfter: the first message is written in the same batch that creates the chat.
+          function isChatParticipantAfter() {
+            return request.auth.uid in getAfter(chatPath()).data.get('participants', []);
+          }
+          function changedKeys() {
+            return request.resource.data.diff(resource.data).affectedKeys();
+          }
+
+          allow read: if isActiveMember(instId) &&
+            request.auth.uid in get(chatPath()).data.get('participants', []);
+
+          // You can only send messages as yourself.
+          allow create: if isActiveMember(instId) && isChatParticipantAfter() &&
+            request.resource.data.get('senderId', '') == request.auth.uid;
+
+          allow update: if isActiveMember(instId) && isChatParticipantAfter() && (
+            // Only the sender may edit the text.
+            (resource.data.get('senderId', '') == request.auth.uid &&
+             changedKeys().hasOnly(['text', 'isEdited'])) ||
+            // Anyone in the chat may react.
+            changedKeys().hasOnly(['reactions']) ||
+            // "Delete for me" may only touch your own flag.
+            (changedKeys().hasOnly(['deletedBy']) &&
+             request.resource.data.deletedBy.diff(resource.data.get('deletedBy', {})).affectedKeys().hasOnly([request.auth.uid]))
+          );
+
+          // Messages are never hard-deleted from the client.
+          allow delete: if false;
         }
       }
       

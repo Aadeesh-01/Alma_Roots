@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../model/news_event_model.dart';
 import '../../service/news_event_service.dart';
 import 'news_event_screen.dart'; // To access CreatePostModal
+import 'package:cs261_project/service/profile_service.dart';
 import 'package:cs261_project/theme/app_colors.dart';
 import 'package:cs261_project/widget/app_avatar.dart';
 import 'package:cs261_project/widget/app_section.dart';
@@ -31,6 +32,38 @@ class _NewsEventDetailScreenState extends State<NewsEventDetailScreen> {
   final _currentUser = FirebaseAuth.instance.currentUser;
   bool _isLiking = false;
   bool _isRsvping = false;
+  String? _myName;
+  Stream<DocumentSnapshot>? _myRsvpStream;
+
+  @override
+  void initState() {
+    super.initState();
+    final uid = _currentUser?.uid;
+    if (uid != null) {
+      _myRsvpStream = _service.getMyRsvpStream(widget.instituteId, widget.post.id, uid);
+      _loadMyName(uid);
+    }
+  }
+
+  @override
+  void dispose() {
+    _commentController.dispose();
+    super.dispose();
+  }
+
+  /// Likes, comments and RSVPs should carry the profile name, not the auth email.
+  Future<void> _loadMyName(String uid) async {
+    final profile = await ProfileService(instituteId: widget.instituteId).getProfile(uid);
+    if (mounted && profile != null && profile.name.trim().isNotEmpty) {
+      _myName = profile.name.trim();
+    }
+  }
+
+  String get _displayName {
+    if (_myName != null) return _myName!;
+    final email = _currentUser?.email ?? '';
+    return email.isNotEmpty ? email.split('@').first : 'Member';
+  }
 
   void _showSnackBar(String message, Color color) {
     if (!mounted) return;
@@ -48,7 +81,7 @@ class _NewsEventDetailScreenState extends State<NewsEventDetailScreen> {
         widget.instituteId,
         widget.post.id,
         user.uid,
-        user.displayName ?? 'Unknown',
+        _displayName,
       );
     } catch (e) {
       if (!mounted) return;
@@ -64,20 +97,27 @@ class _NewsEventDetailScreenState extends State<NewsEventDetailScreen> {
     if (user == null) return;
     setState(() => _isRsvping = true);
     try {
-      await _service.toggleRsvp(
+      final status = await _service.toggleRsvp(
         widget.instituteId,
         widget.post.id,
         user.uid,
-        user.displayName ?? 'Unknown',
+        _displayName,
         user.email ?? '',
         isAttending,
       );
       if (!mounted) return;
-      _showSnackBar(
-          isAttending ? "RSVP Confirmed!" : "RSVP Cancelled", Colors.green);
+      final message = switch (status) {
+        'attending' => "You're going! RSVP confirmed.",
+        'waitlisted' => "The event is full. You're on the waitlist.",
+        _ => "RSVP cancelled.",
+      };
+      _showSnackBar(message, Theme.of(context).colorScheme.inverseSurface);
     } catch (e) {
       if (!mounted) return;
-      _showSnackBar("RSVP failed: $e", Theme.of(context).colorScheme.error);
+      _showSnackBar(
+        "RSVP failed: ${e.toString().replaceAll('Exception: ', '')}",
+        Theme.of(context).colorScheme.error,
+      );
     } finally {
       if (mounted) setState(() => _isRsvping = false);
     }
@@ -91,7 +131,7 @@ class _NewsEventDetailScreenState extends State<NewsEventDetailScreen> {
         widget.instituteId,
         widget.post.id,
         user.uid,
-        user.displayName ?? 'Unknown',
+        _displayName,
         _commentController.text.trim(),
       );
       _commentController.clear();
@@ -238,16 +278,48 @@ class _NewsEventDetailScreenState extends State<NewsEventDetailScreen> {
           ],
           if (widget.post.registrationRequired) ...[
             const SizedBox(height: 14),
-            FilledButton.icon(
-              onPressed: _isRsvping ? null : () => _handleRsvp(true),
-              icon: _isRsvping
-                  ? SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: cs.onPrimary),
-                    )
-                  : const Icon(Icons.how_to_reg_outlined, size: 18),
-              label: const Text('RSVP to this event'),
+            StreamBuilder<DocumentSnapshot>(
+              stream: _myRsvpStream,
+              builder: (context, snap) {
+                final data = snap.data?.data() as Map<String, dynamic>?;
+                final status = data?['status'] as String?;
+                final spinner = SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: cs.primary),
+                );
+
+                if (status == 'attending' || status == 'waitlisted') {
+                  final going = status == 'attending';
+                  return Row(
+                    children: [
+                      Icon(
+                        going ? Icons.check_circle_rounded : Icons.hourglass_top_rounded,
+                        size: 20,
+                        color: going ? cs.primary : cs.secondary,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          going ? "You're going" : "You're on the waitlist",
+                          style: text.titleSmall?.copyWith(color: going ? cs.primary : cs.secondary),
+                        ),
+                      ),
+                      OutlinedButton(
+                        onPressed: _isRsvping ? null : () => _handleRsvp(false),
+                        style: OutlinedButton.styleFrom(minimumSize: const Size(0, 40)),
+                        child: _isRsvping ? spinner : Text(going ? 'Cancel RSVP' : 'Leave waitlist'),
+                      ),
+                    ],
+                  );
+                }
+
+                return FilledButton.icon(
+                  onPressed: _isRsvping ? null : () => _handleRsvp(true),
+                  icon: _isRsvping ? spinner : const Icon(Icons.how_to_reg_outlined, size: 18),
+                  label: const Text('RSVP to this event'),
+                );
+              },
             ),
           ],
         ],
@@ -255,12 +327,43 @@ class _NewsEventDetailScreenState extends State<NewsEventDetailScreen> {
     );
   }
 
-  Widget _buildComment(ThemeData theme, Map<String, dynamic> cData) {
+  Future<void> _confirmDeleteComment(String commentId) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete comment?'),
+        content: const Text('This removes the comment for everyone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              minimumSize: const Size(0, 44),
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+              foregroundColor: Theme.of(ctx).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    try {
+      await _service.deleteComment(widget.instituteId, widget.post.id, commentId);
+    } catch (e) {
+      if (!mounted) return;
+      _showSnackBar('Could not delete comment', Theme.of(context).colorScheme.error);
+    }
+  }
+
+  Widget _buildComment(ThemeData theme, String commentId, Map<String, dynamic> cData) {
     final cs = theme.colorScheme;
     final cName = (cData['name'] as String?)?.trim().isNotEmpty == true ? cData['name'] as String : 'Member';
     final cText = cData['text'] ?? '';
     final cTime = cData['timestamp'] as Timestamp?;
     final timeStr = cTime != null ? DateFormat('d MMM, h:mm a').format(cTime.toDate()) : 'Just now';
+    // Matches firestore.rules: authors and admins may delete comments.
+    final canDelete = cData['uid'] == _currentUser?.uid || widget.userRole == 'admin';
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -289,6 +392,20 @@ class _NewsEventDetailScreenState extends State<NewsEventDetailScreen> {
                       child: Text(cName, style: theme.textTheme.labelLarge, maxLines: 1, overflow: TextOverflow.ellipsis),
                     ),
                     Text(timeStr, style: theme.textTheme.bodySmall?.copyWith(fontSize: 11)),
+                    if (canDelete) ...[
+                      const SizedBox(width: 4),
+                      SizedBox(
+                        width: 28,
+                        height: 28,
+                        child: IconButton(
+                          padding: EdgeInsets.zero,
+                          iconSize: 16,
+                          tooltip: 'Delete comment',
+                          onPressed: () => _confirmDeleteComment(commentId),
+                          icon: Icon(Icons.delete_outline_rounded, color: cs.onSurfaceVariant),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 4),
@@ -527,7 +644,7 @@ class _NewsEventDetailScreenState extends State<NewsEventDetailScreen> {
                         return Column(
                           children: [
                             for (final c in comments) ...[
-                              _buildComment(theme, c.data() as Map<String, dynamic>),
+                              _buildComment(theme, c.id, c.data() as Map<String, dynamic>),
                               const SizedBox(height: 12),
                             ],
                           ],

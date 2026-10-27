@@ -1,86 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cs261_project/widget/app_empty_state.dart';
+import 'package:cs261_project/widget/app_section.dart';
 
-class AdminInstituteListScreen extends StatefulWidget {
-  const AdminInstituteListScreen({super.key});
+/// Read-only list of institutes. Creating or deleting institutes is restricted
+/// to platform super admins by firestore.rules, so it is not offered here.
+class AdminInstituteListScreen extends StatelessWidget {
+  /// The signed-in admin's institute, highlighted in the list.
+  final String? currentInstituteId;
 
-  @override
-  State<AdminInstituteListScreen> createState() =>
-      _AdminInstituteListScreenState();
-}
-
-class _AdminInstituteListScreenState extends State<AdminInstituteListScreen> {
-  final _firestore = FirebaseFirestore.instance;
-  final _instituteNameController = TextEditingController();
-  bool _isAdding = false;
-
-  Future<void> _addInstitute() async {
-    final name = _instituteNameController.text.trim();
-    if (name.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text("Institute name cannot be empty"),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
-      return;
-    }
-
-    setState(() => _isAdding = true);
-
-    try {
-      await _firestore.collection('institutes').add({
-        'name': name,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-
-      if (!mounted) return;
-      _instituteNameController.clear();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Institute added successfully!"),
-          backgroundColor: Colors.green, // Success
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Error: $e"),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _isAdding = false);
-    }
-  }
-
-  Future<void> _deleteInstitute(String id) async {
-    try {
-      await _firestore.collection('institutes').doc(id).delete();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Institute deleted"),
-          backgroundColor: Colors.red, // Deletion is red
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Error: $e"),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
-    }
-  }
-
-  @override
-  void dispose() {
-    _instituteNameController.dispose();
-    super.dispose();
-  }
+  const AdminInstituteListScreen({super.key, this.currentInstituteId});
 
   @override
   Widget build(BuildContext context) {
@@ -89,136 +18,112 @@ class _AdminInstituteListScreenState extends State<AdminInstituteListScreen> {
     final textTheme = theme.textTheme;
 
     return Scaffold(
-      backgroundColor: colorScheme.surface,
-      appBar: AppBar(
-        title: Text(
-          "Manage Institutes",
-          style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
-        ),
-        backgroundColor: colorScheme.surface,
-        elevation: 0,
-        iconTheme: IconThemeData(color: colorScheme.onSurface),
-        surfaceTintColor: Colors.transparent,
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _instituteNameController,
-                    decoration: InputDecoration(
-                      labelText: "Institute Name",
-                      prefixIcon: const Icon(Icons.account_balance_outlined),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                    ),
+      appBar: AppBar(title: const Text('Institutes')),
+      body: StreamBuilder<QuerySnapshot>(
+        // No orderBy: institutes without a createdAt field would be dropped by the query.
+        stream: FirebaseFirestore.instance.collection('institutes').snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(child: Text('Error loading institutes.', style: TextStyle(color: colorScheme.error)));
+          }
+
+          final institutes = (snapshot.data?.docs ?? []).toList()
+            ..sort((a, b) {
+              if (a.id == currentInstituteId) return -1;
+              if (b.id == currentInstituteId) return 1;
+              final an = ((a.data() as Map<String, dynamic>)['name'] ?? '').toString().toLowerCase();
+              final bn = ((b.data() as Map<String, dynamic>)['name'] ?? '').toString().toLowerCase();
+              return an.compareTo(bn);
+            });
+
+          if (institutes.isEmpty) {
+            return const AppEmptyState(
+              icon: Icons.account_balance_outlined,
+              title: 'No institutes yet',
+              message: 'Institutes are created by the platform administrator.',
+            );
+          }
+
+          return ListView.separated(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            itemCount: institutes.length + 1,
+            separatorBuilder: (_, __) => const SizedBox(height: 10),
+            itemBuilder: (context, index) {
+              if (index == 0) {
+                return Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: colorScheme.secondaryContainer.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(16),
                   ),
-                ),
-                const SizedBox(width: 12),
-                _isAdding
-                    ? const SizedBox(
-                        height: 54,
-                        width: 54,
-                        child: Center(child: CircularProgressIndicator()),
-                      )
-                    : ElevatedButton(
-                        onPressed: _addInstitute,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: colorScheme.primary,
-                          foregroundColor: colorScheme.onPrimary,
-                          minimumSize: const Size(80, 54),
-                          elevation: 2,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: const Text(
-                          "Add",
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline_rounded, color: colorScheme.onSecondaryContainer),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          '${institutes.length} institute${institutes.length == 1 ? '' : 's'} on Alma Roots. '
+                          'New institutes are added by the platform administrator.',
+                          style: textTheme.bodySmall?.copyWith(color: colorScheme.onSecondaryContainer),
                         ),
                       ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                "Institute List",
-                style: textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
+                    ],
+                  ),
+                );
+              }
+
+              final doc = institutes[index - 1];
+              final data = doc.data() as Map<String, dynamic>;
+              final name = (data['name'] as String?)?.trim().isNotEmpty == true ? data['name'] as String : 'Unnamed institute';
+              final isMine = doc.id == currentInstituteId;
+
+              return AppSurfaceCard(
+                color: isMine ? colorScheme.primaryContainer.withValues(alpha: 0.5) : null,
+                padding: const EdgeInsets.all(14),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: isMine ? colorScheme.primary : colorScheme.surfaceContainer,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Icon(
+                        Icons.account_balance_rounded,
+                        color: isMine ? colorScheme.onPrimary : colorScheme.onSurfaceVariant,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(name, style: textTheme.titleSmall),
+                          const SizedBox(height: 2),
+                          Text('ID: ${doc.id}', style: textTheme.bodySmall, maxLines: 1, overflow: TextOverflow.ellipsis),
+                        ],
+                      ),
+                    ),
+                    if (isMine)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: colorScheme.primary,
+                          borderRadius: BorderRadius.circular(100),
+                        ),
+                        child: Text('Yours', style: textTheme.labelSmall?.copyWith(color: colorScheme.onPrimary)),
+                      ),
+                  ],
                 ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Expanded(
-              child: StreamBuilder<QuerySnapshot>(
-                stream: _firestore
-                    .collection('institutes')
-                    .orderBy('createdAt', descending: true)
-                    .snapshots(),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-
-                  if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                    return const Center(
-                      child: Text("No institutes added yet."),
-                    );
-                  }
-
-                  final institutes = snapshot.data!.docs;
-
-                  return ListView.builder(
-                    itemCount: institutes.length,
-                    itemBuilder: (context, index) {
-                      final doc = institutes[index];
-                      final name = doc['name'] ?? 'Unnamed';
-                      final id = doc.id;
-
-                      return Card(
-                        color: colorScheme.surface,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          side: BorderSide(color: theme.dividerColor),
-                        ),
-                        elevation: 0,
-                        margin: const EdgeInsets.only(bottom: 12),
-                        child: ListTile(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          leading: Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: colorScheme.primary.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Icon(Icons.account_balance,
-                                color: colorScheme.primary),
-                          ),
-                          title: Text(name,
-                              style:
-                                  textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
-                          trailing: IconButton(
-                            icon: Icon(Icons.delete_outline, color: colorScheme.error),
-                            onPressed: () => _deleteInstitute(id),
-                          ),
-                        ),
-                      );
-                    },
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
+              );
+            },
+          );
+        },
       ),
     );
   }

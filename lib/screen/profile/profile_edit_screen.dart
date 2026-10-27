@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:cs261_project/service/profile_service.dart';
-import 'package:cs261_project/screen/student/user_home_screen.dart';
 import 'package:cs261_project/theme/app_spacing.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -32,6 +31,11 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   final TextEditingController bioCtrl = TextEditingController();
   final TextEditingController yearCtrl = TextEditingController();
   final TextEditingController companyCtrl = TextEditingController();
+  final TextEditingController departmentCtrl = TextEditingController();
+
+  bool _isMentor = false;
+  bool _isHiring = false;
+  bool _openToNetworking = false;
 
   bool _isLoading = true;
   bool _isUploading = false;
@@ -54,6 +58,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     bioCtrl.dispose();
     yearCtrl.dispose();
     companyCtrl.dispose();
+    departmentCtrl.dispose();
     super.dispose();
   }
 
@@ -68,6 +73,10 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         bioCtrl.text = profile.bio ?? '';
         yearCtrl.text = profile.year ?? '';
         companyCtrl.text = profile.company ?? '';
+        departmentCtrl.text = profile.department ?? '';
+        _isMentor = profile.isMentor;
+        _isHiring = profile.isHiring;
+        _openToNetworking = profile.openToNetworking;
         _profilePicUrl = profile.profileImage;
       });
     }
@@ -116,6 +125,10 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
           'interest': interestCtrl.text.trim(),
           'bio': bioCtrl.text.trim(),
           if (_role == 'alumni') 'company': companyCtrl.text.trim(),
+          'department': departmentCtrl.text.trim(),
+          'openToNetworking': _openToNetworking,
+          if (_role == 'alumni') 'isMentor': _isMentor,
+          if (_role == 'alumni') 'isHiring': _isHiring,
           'profileImage': _profilePicUrl,
           'isProfileComplete': true,
         };
@@ -124,12 +137,10 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
 
         if (!mounted) return;
 
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(
-            builder: (_) => UserHomeScreen(instituteId: widget.instituteId),
-          ),
-          (route) => false,
-        );
+        // Return to wherever the editor was opened from (student or admin shell);
+        // `true` tells ProfileScreen to reload.
+        AppSnackBar.showSuccess(context, 'Profile saved');
+        Navigator.of(context).pop(true);
       } catch (e) {
         if (mounted) {
           AppSnackBar.showError(context, "Could not save profile");
@@ -239,6 +250,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     bool isNumeric = false,
     int maxLines = 1,
     String? hint,
+    bool isRequired = true,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
@@ -254,7 +266,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
           alignLabelWithHint: maxLines > 1,
           prefixIcon: maxLines > 1 ? null : Icon(icon, size: 20),
         ),
-        validator: (value) => (value == null || value.isEmpty) ? 'Required' : null,
+        validator: isRequired ? (value) => (value == null || value.isEmpty) ? 'Required' : null : null,
       ),
     );
   }
@@ -328,6 +340,43 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   label: 'Organization / company',
                   icon: Icons.apartment_rounded,
                 ),
+              _buildTextField(
+                theme,
+                controller: departmentCtrl,
+                label: 'Department (optional)',
+                hint: 'e.g. Computer Science',
+                icon: Icons.account_tree_outlined,
+                isRequired: false,
+              ),
+            ]),
+
+            _buildSection(theme, "Networking", "Shown as badges on your profile and in chats.", [
+              if (_role == 'alumni') ...[
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  secondary: const Icon(Icons.volunteer_activism_outlined),
+                  title: const Text('Available to mentor'),
+                  subtitle: const Text('Students can reach out for guidance'),
+                  value: _isMentor,
+                  onChanged: (v) => setState(() => _isMentor = v),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  secondary: const Icon(Icons.work_outline_rounded),
+                  title: const Text('Hiring'),
+                  subtitle: const Text('Your team has open roles or internships'),
+                  value: _isHiring,
+                  onChanged: (v) => setState(() => _isHiring = v),
+                ),
+              ],
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                secondary: const Icon(Icons.handshake_outlined),
+                title: const Text('Open to networking'),
+                subtitle: const Text('Happy to hear from new people'),
+                value: _openToNetworking,
+                onChanged: (v) => setState(() => _openToNetworking = v),
+              ),
             ]),
 
             _buildSection(theme, "Professional profile", "Helps alumni and mentors find you in search.", [

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cs261_project/model/participant_model.dart';
 import 'package:cs261_project/service/admin_service.dart';
+import 'package:cs261_project/widget/app_avatar.dart';
+import 'package:cs261_project/widget/app_section.dart';
+import 'package:cs261_project/widget/app_snackbar.dart';
 
 class AdminPermanentDeleteConfirmScreen extends StatefulWidget {
   final String instituteId;
@@ -25,7 +28,7 @@ class _AdminPermanentDeleteConfirmScreenState extends State<AdminPermanentDelete
   Future<void> _scheduleDeletion() async {
     setState(() => _errorMessage = null);
 
-    if (_emailController.text.trim() != widget.user.email) {
+    if (_emailController.text.trim().toLowerCase() != widget.user.email.trim().toLowerCase()) {
       setState(() => _errorMessage = "Email does not match.");
       return;
     }
@@ -45,16 +48,11 @@ class _AdminPermanentDeleteConfirmScreenState extends State<AdminPermanentDelete
       );
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          backgroundColor: Colors.green, // Success
-          content: Text('Permanent deletion scheduled. It will execute in 24 hours.'),
-        ),
-      );
+      AppSnackBar.showSuccess(context, 'Scheduled. The account will be deleted in 24 hours.');
       Navigator.pop(context, true); // Return true indicating success
     } catch (e) {
       if (!mounted) return;
-      setState(() => _errorMessage = "Error: $e");
+      setState(() => _errorMessage = e.toString().replaceAll('Exception: ', ''));
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -62,119 +60,135 @@ class _AdminPermanentDeleteConfirmScreenState extends State<AdminPermanentDelete
     }
   }
 
+  bool get _confirmed =>
+      _emailController.text.trim().toLowerCase() == widget.user.email.trim().toLowerCase() &&
+      _deleteController.text == 'DELETE';
+
+  Widget _bullet(ThemeData theme, IconData icon, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: theme.colorScheme.error),
+          const SizedBox(width: 10),
+          Expanded(child: Text(text, style: theme.textTheme.bodyMedium)),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
+    final user = widget.user;
+    final name = user.name.isNotEmpty ? user.name : user.email.split('@').first;
 
     return Scaffold(
-      backgroundColor: colorScheme.surface,
-      appBar: AppBar(
-        title: Text('Schedule Permanent Deletion', style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600)),
-        backgroundColor: colorScheme.surface,
-        foregroundColor: colorScheme.onSurface,
-        elevation: 0,
-        iconTheme: IconThemeData(color: colorScheme.onSurface),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: colorScheme.error.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: colorScheme.error.withValues(alpha: 0.3)),
-              ),
-              child: Column(
-                children: [
-                  Icon(Icons.warning_amber_rounded, size: 48, color: colorScheme.error),
-                  const SizedBox(height: 12),
-                  Text(
-                    "WARNING",
-                    style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold, color: colorScheme.error),
+      appBar: AppBar(title: const Text('Delete permanently')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+        children: [
+          AppSurfaceCard(
+            child: Row(
+              children: [
+                AppAvatar(name: name, imageUrl: user.profileImage, radius: 26),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(name, style: textTheme.titleMedium),
+                      Text(user.email, style: textTheme.bodySmall),
+                      const SizedBox(height: 6),
+                      RoleBadge(role: user.role, dense: true),
+                    ],
                   ),
-                  const SizedBox(height: 12),
-                  Text(
-                    "This account will be permanently removed after 24 hours.\n\n"
-                    "The following data will be removed:\n"
-                    "• Authentication account\n"
-                    "• Participant profile\n"
-                    "• Search visibility\n"
-                    "• Networking profile\n\n"
-                    "Chat history will be preserved using tombstoning.",
-                    style: textTheme.bodyMedium?.copyWith(height: 1.5),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 32),
-            Text(
-              "Confirm User Details",
-              style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              "User Email: ${widget.user.email}",
-              style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _emailController,
-              decoration: const InputDecoration(
-                labelText: 'Type exact email',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              "Confirm Action",
-              style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              "Type DELETE to continue.",
-              style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _deleteController,
-              decoration: const InputDecoration(
-                labelText: 'Type DELETE',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            if (_errorMessage != null) ...[
-              const SizedBox(height: 16),
-              Text(
-                _errorMessage!,
-                style: textTheme.bodyMedium?.copyWith(color: colorScheme.error, fontWeight: FontWeight.bold),
-              ),
-            ],
-            const SizedBox(height: 32),
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton(
-                onPressed: _isLoading ? null : _scheduleDeletion,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: colorScheme.error,
-                  foregroundColor: colorScheme.onError,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
-                child: _isLoading
-                    ? SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(color: colorScheme.onError, strokeWidth: 2))
-                    : const Text("Schedule Permanent Deletion", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-              ),
+              ],
             ),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: colorScheme.errorContainer.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: colorScheme.error.withValues(alpha: 0.3)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.warning_amber_rounded, color: colorScheme.error),
+                    const SizedBox(width: 8),
+                    Text('This cannot be undone', style: textTheme.titleSmall?.copyWith(color: colorScheme.error)),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'After a 24-hour grace period, the account is deleted automatically:',
+                  style: textTheme.bodyMedium,
+                ),
+                _bullet(theme, Icons.key_off_outlined, 'Their login is removed'),
+                _bullet(theme, Icons.person_remove_outlined, 'Their profile is replaced with "Deleted User"'),
+                _bullet(theme, Icons.search_off_rounded, 'They disappear from search and networking'),
+                const SizedBox(height: 10),
+                Text(
+                  'Messages they sent stay in other people\'s chats. You can cancel any time during the grace period from the Deletion queue.',
+                  style: textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text('Type their email to confirm', style: textTheme.titleSmall),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _emailController,
+            keyboardType: TextInputType.emailAddress,
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              hintText: user.email,
+              prefixIcon: const Icon(Icons.mail_outline_rounded, size: 20),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text('Type DELETE', style: textTheme.titleSmall),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _deleteController,
+            textCapitalization: TextCapitalization.characters,
+            onChanged: (_) => setState(() {}),
+            decoration: const InputDecoration(
+              hintText: 'DELETE',
+              prefixIcon: Icon(Icons.keyboard_outlined, size: 20),
+            ),
+          ),
+          if (_errorMessage != null) ...[
+            const SizedBox(height: 12),
+            Text(_errorMessage!, style: textTheme.bodyMedium?.copyWith(color: colorScheme.error)),
           ],
-        ),
+          const SizedBox(height: 28),
+          SizedBox(
+            height: 54,
+            child: FilledButton(
+              onPressed: _isLoading || !_confirmed ? null : _scheduleDeletion,
+              style: FilledButton.styleFrom(
+                backgroundColor: colorScheme.error,
+                foregroundColor: colorScheme.onError,
+              ),
+              child: _isLoading
+                  ? SizedBox(
+                      height: 22,
+                      width: 22,
+                      child: CircularProgressIndicator(color: colorScheme.onError, strokeWidth: 2.5))
+                  : const Text('Schedule permanent deletion'),
+            ),
+          ),
+        ],
       ),
     );
   }

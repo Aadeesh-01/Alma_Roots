@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class SearchService {
@@ -41,10 +42,10 @@ class SearchService {
       final String lowercaseQuery = queryText.toLowerCase().trim();
       if (lowercaseQuery.isEmpty) return [];
 
-      print("🔍 [SEARCH START] Query: '$queryText' | Token: '$lowercaseQuery' | Institute: $instituteId");
+      debugPrint("🔍 [SEARCH START] Query: '$queryText' | Token: '$lowercaseQuery' | Institute: $instituteId");
       
       final collectionPath = 'institutes/$instituteId/participants';
-      print("📂 [SEARCH PATH] Executing query on: $collectionPath");
+      debugPrint("📂 [SEARCH PATH] Executing query on: $collectionPath");
 
       // Enforce multi-tenancy: Only search inside the specific institute's subcollection
       final QuerySnapshot snapshot = await _firestore
@@ -55,20 +56,16 @@ class SearchService {
           .limit(20) // Optimization: Limit results for large datasets
           .get();
 
-      print("📊 [SEARCH RESULT] Found ${snapshot.docs.length} documents matching '$lowercaseQuery'.");
+      debugPrint("📊 [SEARCH RESULT] Found ${snapshot.docs.length} documents matching '$lowercaseQuery'.");
 
       return snapshot.docs.map((doc) {
         final data = doc.data() as Map<String, dynamic>;
         data['id'] = doc.id;
-        
-        // Debugging verification
-        final keywords = data['searchKeywords'] as List<dynamic>?;
-        print("👤 [SEARCH MATCH] Found user: ${data['name'] ?? 'Unknown'} | Keywords present: ${keywords != null ? 'YES (${keywords.length})' : 'NO'}");
-        
+
         return data;
       }).where((data) => data['isDeleted'] != true && data['status'] != 'deleted').toList();
     } catch (e) {
-      print("❌ [SEARCH ERROR] Firestore search error: $e");
+      debugPrint("❌ [SEARCH ERROR] Firestore search error: $e");
       return [];
     }
   }
@@ -98,7 +95,7 @@ class SearchService {
       }
       return null;
     } catch (e) {
-      print("❌ Firestore getByEmail error: $e");
+      debugPrint("❌ Firestore getByEmail error: $e");
       return null;
     }
   }

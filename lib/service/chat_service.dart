@@ -116,10 +116,8 @@ class ChatService {
         currentUserId: true,
         otherUserId: false,
       },
-      // Ensure these exist so we don't overwrite with nulls
-      'mutedBy': {currentUserId: false, otherUserId: false},
-      'archivedBy': {currentUserId: false, otherUserId: false},
-      'pinnedBy': {currentUserId: false, otherUserId: false},
+      // mutedBy / archivedBy / pinnedBy are left alone so each user's choices
+      // survive new messages; ChatModel treats missing keys as false.
     };
 
     batch.set(chatRef, chatData, SetOptions(merge: true));

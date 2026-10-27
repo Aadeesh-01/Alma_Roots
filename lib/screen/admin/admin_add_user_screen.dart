@@ -8,7 +8,9 @@ import 'package:cs261_project/widget/app_loading_view.dart';
 import 'package:cs261_project/widget/app_snackbar.dart';
 
 class AdminAddParticipantScreen extends StatefulWidget {
-  const AdminAddParticipantScreen({super.key});
+  /// The admin's own institute. New users can only be created there.
+  final String instituteId;
+  const AdminAddParticipantScreen({super.key, required this.instituteId});
 
   @override
   State<AdminAddParticipantScreen> createState() =>
@@ -31,30 +33,25 @@ class _AdminAddParticipantScreenState extends State<AdminAddParticipantScreen> {
   @override
   void initState() {
     super.initState();
+    _selectedInstituteId = widget.instituteId;
     _loadInstitutes();
   }
 
   Future<void> _loadInstitutes() async {
-    final snapshot = await _firestore.collection('institutes').get();
+    final doc = await _firestore.collection('institutes').doc(widget.instituteId).get();
+    if (!mounted) return;
     setState(() {
-      _institutes = snapshot.docs
-          .map((doc) => {'id': doc.id, 'name': doc['name']})
-          .toList();
+      _institutes = [
+        {'id': widget.instituteId, 'name': doc.data()?['name'] ?? widget.instituteId},
+      ];
     });
   }
 
   Future<void> _addParticipant() async {
     if (!_formKey.currentState!.validate()) {
-      print("DEBUG: _formKey.currentState!.validate() returned false");
       return;
     }
     _formKey.currentState!.save();
-
-    print("DEBUG: Original email entered: '$_email'");
-    final normalizedEmail = _email.trim().toLowerCase();
-    print("DEBUG: Normalized email: '$normalizedEmail'");
-    final validationResult = EmailValidator.isValid(_email);
-    print("DEBUG: Email validation result (isValid): $validationResult");
 
     setState(() => _isLoading = true);
 
@@ -72,7 +69,6 @@ class _AdminAddParticipantScreenState extends State<AdminAddParticipantScreen> {
         throw Exception("Please enter a valid email address.");
       }
 
-      print("DEBUG: Cloud Function is called");
       final createParticipant = FirebaseFunctions.instanceFor(region: 'asia-south1')
           .httpsCallable('createParticipantAccount');
 
@@ -88,13 +84,7 @@ class _AdminAddParticipantScreenState extends State<AdminAddParticipantScreen> {
       AppSnackBar.showSuccess(context, result.data['message'] ?? 'Participant added successfully!');
 
       Navigator.pop(context);
-    } on FirebaseFunctionsException catch (e, stackTrace) {
-      print("DEBUG: Flutter exception type: FirebaseFunctionsException");
-      print("DEBUG: Flutter exception code: ${e.code}");
-      print("DEBUG: Flutter exception message: ${e.message}");
-      print("DEBUG: Flutter exception details: ${e.details}");
-      print("DEBUG: Full stack trace:\n$stackTrace");
-      
+    } on FirebaseFunctionsException catch (e) {
       if (!mounted) return;
       String message = "Unable to create account. Please try again.";
       if (e.code == 'invalid-email' || e.code == 'invalid-argument') {
@@ -106,15 +96,9 @@ class _AdminAddParticipantScreenState extends State<AdminAddParticipantScreen> {
       } else if (e.code != 'internal' && e.code != 'unknown' && e.message != null && e.message!.isNotEmpty) {
         message = e.message!;
       }
-      print("DEBUG: Displayed Message: $message");
       AppSnackBar.showError(context, message);
-    } catch (e, stackTrace) {
-      print("DEBUG: Flutter exception type: ${e.runtimeType}");
-      print("DEBUG: Flutter exception string: ${e.toString()}");
-      print("DEBUG: Full stack trace:\n$stackTrace");
-      
+    } catch (e) {
       if (!mounted) return;
-      print("DEBUG: Displayed Message: ${e.toString().replaceAll('Exception: ', '')}");
       AppSnackBar.showError(context, e.toString().replaceAll('Exception: ', ''));
     }
 
@@ -158,28 +142,20 @@ class _AdminAddParticipantScreenState extends State<AdminAddParticipantScreen> {
                     style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
                   ),
                   AppSpacing.gapLg,
-                  DropdownButtonFormField<String>(
-                    value: _selectedInstituteId,
-                    isExpanded: true,
-                    items: _institutes
-                        .map(
-                          (inst) => DropdownMenuItem<String>(
-                            value: inst['id'] as String,
-                            child: Text(inst['name']),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (value) =>
-                        setState(() => _selectedInstituteId = value),
+                  InputDecorator(
                     decoration: const InputDecoration(
-                      labelText: 'Select Institute',
+                      labelText: 'Institute',
+                      prefixIcon: Icon(Icons.account_balance_outlined, size: 20),
+                      helperText: 'Users are added to your own institute',
                     ),
-                    validator: (v) =>
-                        v == null ? 'Please select an institute' : null,
+                    child: Text(
+                      _institutes.isEmpty ? 'Loading…' : _institutes.first['name'].toString(),
+                      style: textTheme.bodyLarge,
+                    ),
                   ),
                   AppSpacing.gapMd,
                   DropdownButtonFormField<String>(
-                    value: _selectedRole,
+                    initialValue: _selectedRole,
                     items: const [
                       DropdownMenuItem(value: 'student', child: Text('Student')),
                       DropdownMenuItem(value: 'alumni', child: Text('Alumni')),

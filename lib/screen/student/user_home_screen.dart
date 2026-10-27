@@ -8,6 +8,7 @@ import 'package:cs261_project/model/participant_model.dart';
 import 'package:cs261_project/screen/profile/profile_screen.dart';
 import 'package:cs261_project/screen/main_home_screen.dart';
 import 'package:cs261_project/service/profile_service.dart';
+import 'package:cs261_project/service/notification_service.dart';
 import 'package:cs261_project/theme/app_spacing.dart';
 import 'package:cs261_project/screen/settings/settings_screen.dart';
 import 'package:cs261_project/screen/settings/help_support_screen.dart';
@@ -37,6 +38,7 @@ class _UserHomeScreenState extends State<UserHomeScreen> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
       _profileStream = ProfileService(instituteId: widget.instituteId).getProfileStream(uid);
+      NotificationService.instance.init(widget.instituteId);
     }
   }
 
@@ -217,6 +219,7 @@ class _UserHomeScreenState extends State<UserHomeScreen> {
             child: Padding(
               padding: const EdgeInsets.all(AppSpacing.sm),
               child: _buildDrawerItem(Icons.logout_rounded, "Log out", () async {
+                await NotificationService.instance.unregister();
                 await FirebaseAuth.instance.signOut();
                 if (!context.mounted) return;
                 Navigator.of(context).pushReplacement(

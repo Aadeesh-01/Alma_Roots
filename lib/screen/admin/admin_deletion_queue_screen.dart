@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:cs261_project/service/admin_service.dart';
-import 'package:cs261_project/theme/app_spacing.dart';
+import 'package:cs261_project/widget/app_avatar.dart';
+import 'package:cs261_project/widget/app_empty_state.dart';
+import 'package:cs261_project/widget/app_section.dart';
+import 'package:cs261_project/widget/app_snackbar.dart';
 
 class AdminDeletionQueueScreen extends StatefulWidget {
   final String instituteId;
@@ -15,22 +18,24 @@ class AdminDeletionQueueScreen extends StatefulWidget {
 
 class _AdminDeletionQueueScreenState extends State<AdminDeletionQueueScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  // One shared ticker drives every countdown on the screen.
+  final Stream<DateTime> _clock = Stream.periodic(const Duration(seconds: 1), (_) => DateTime.now()).asBroadcastStream();
 
   Future<void> _cancelDeletion(ThemeData theme, String targetUid, String targetEmail, String queueDocId) async {
     final colorScheme = theme.colorScheme;
-    final textTheme = theme.textTheme;
 
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Cancel Permanent Deletion?', style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
-        content: Text('This will remove the user from the permanent deletion queue. They will remain soft-deleted.', style: textTheme.bodyLarge),
+        icon: Icon(Icons.restore_rounded, color: colorScheme.primary),
+        title: const Text('Cancel permanent deletion?'),
+        content: Text('$targetEmail is removed from the queue and stays deactivated. You can restore them from Manage users.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: Text('No', style: TextStyle(color: colorScheme.onSurfaceVariant))),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Keep scheduled')),
+          FilledButton(
+            style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Cancel Deletion', style: TextStyle(fontWeight: FontWeight.bold)),
+            child: const Text('Cancel deletion'),
           ),
         ],
       ),
@@ -47,42 +52,37 @@ class _AdminDeletionQueueScreenState extends State<AdminDeletionQueueScreen> {
       );
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          backgroundColor: Colors.green, // Success
-          content: Text('Permanent deletion cancelled successfully.'),
-        ),
-      );
+      AppSnackBar.showSuccess(context, 'Permanent deletion cancelled.');
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: Theme.of(context).colorScheme.error,
-          content: Text('Could not cancel: ${e.toString().replaceAll('Exception: ', '')}'),
-        ),
-      );
+      AppSnackBar.showError(context, 'Could not cancel: ${e.toString().replaceAll('Exception: ', '')}');
     }
   }
 
-  Future<void> _processQueue({String? targetUid}) async {
+  Future<void> _processQueue({String? targetUid, String? label}) async {
     final theme = Theme.of(context);
     final isSingle = targetUid != null;
-    
+
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(isSingle ? 'Process Permanent Deletion Now?' : 'Process Entire Queue?'),
+        icon: Icon(Icons.warning_amber_rounded, color: theme.colorScheme.error),
+        title: Text(isSingle ? 'Delete ${label ?? 'this user'} now?' : 'Process the whole queue?'),
         content: Text(
-          isSingle 
-            ? 'This will bypass the 24-hour waiting period and permanently delete this user immediately.' 
-            : 'This will permanently delete all eligible users in the queue whose 24-hour waiting period has expired.',
+          isSingle
+            ? 'This skips the remaining grace period and permanently deletes the account right away. This cannot be undone.'
+            : 'Every user whose 24-hour grace period has ended is permanently deleted now. This cannot be undone.',
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: theme.colorScheme.error, foregroundColor: theme.colorScheme.onError),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              minimumSize: const Size(0, 44),
+              backgroundColor: theme.colorScheme.error,
+              foregroundColor: theme.colorScheme.onError,
+            ),
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Process', style: TextStyle(fontWeight: FontWeight.bold)),
+            child: const Text('Delete permanently'),
           ),
         ],
       ),
@@ -91,7 +91,7 @@ class _AdminDeletionQueueScreenState extends State<AdminDeletionQueueScreen> {
     if (confirm != true) return;
 
     if (!mounted) return;
-    
+
     // Show loading
     showDialog(
       context: context,
@@ -115,17 +115,22 @@ class _AdminDeletionQueueScreenState extends State<AdminDeletionQueueScreen> {
       showDialog(
         context: context,
         builder: (context) => AlertDialog(
-          title: const Text('Processing Results'),
+          icon: Icon(
+            failed > 0 ? Icons.error_outline_rounded : Icons.check_circle_outline_rounded,
+            color: failed > 0 ? theme.colorScheme.error : theme.colorScheme.primary,
+          ),
+          title: Text(processed == 0 && failed == 0 ? 'Nothing to process' : 'Done'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Processed successfully: $processed', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
-              if (failed > 0) Text('Failed: $failed', style: TextStyle(fontWeight: FontWeight.bold, color: theme.colorScheme.error)),
-              const SizedBox(height: AppSpacing.md),
+              Text('Deleted: $processed', style: theme.textTheme.titleSmall),
+              if (failed > 0)
+                Text('Failed: $failed', style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.error)),
+              if (processed == 0 && failed == 0)
+                const Text('No entries have finished their grace period yet.'),
               if (deletedUsers.isNotEmpty) ...[
-                const Text('Deleted Users:'),
-                const SizedBox(height: AppSpacing.sm),
+                const SizedBox(height: 12),
                 ...deletedUsers.map((e) => Text('• $e')),
               ]
             ],
@@ -139,18 +144,39 @@ class _AdminDeletionQueueScreenState extends State<AdminDeletionQueueScreen> {
     } catch (e) {
       if (!mounted) return;
       Navigator.pop(context); // pop loading
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(backgroundColor: theme.colorScheme.error, content: Text('Error: $e')),
-      );
+      AppSnackBar.showError(context, e.toString().replaceAll('Exception: ', ''));
     }
   }
 
-  String _formatRemainingTime(DateTime scheduledFor) {
-    final now = DateTime.now();
+  String _formatRemainingTime(DateTime scheduledFor, DateTime now) {
     final diff = scheduledFor.difference(now);
-    if (diff.isNegative) return "Executing soon...";
-    if (diff.inHours > 0) return "${diff.inHours}h ${diff.inMinutes.remainder(60)}m";
-    return "${diff.inMinutes}m ${diff.inSeconds.remainder(60)}s";
+    if (diff.isNegative) return "Overdue · runs within 5 minutes";
+    if (diff.inHours > 0) return "${diff.inHours}h ${diff.inMinutes.remainder(60)}m left";
+    return "${diff.inMinutes}m ${diff.inSeconds.remainder(60)}s left";
+  }
+
+  Widget _buildInfoBanner(ThemeData theme) {
+    final cs = theme.colorScheme;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: cs.secondaryContainer.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.info_outline_rounded, color: cs.onSecondaryContainer),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Accounts are deleted automatically 24 hours after scheduling. Cancel here to keep someone, or use Delete now to skip the wait.',
+              style: theme.textTheme.bodySmall?.copyWith(color: cs.onSecondaryContainer),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -160,19 +186,15 @@ class _AdminDeletionQueueScreenState extends State<AdminDeletionQueueScreen> {
     final textTheme = theme.textTheme;
 
     return Scaffold(
-      backgroundColor: colorScheme.surface,
       appBar: AppBar(
-        title: const Text('Pending Deletions'),
-        backgroundColor: colorScheme.surface,
-        foregroundColor: colorScheme.onSurface,
-        elevation: 1,
-        shadowColor: theme.dividerColor,
+        title: const Text('Deletion queue'),
         actions: [
           TextButton.icon(
             onPressed: () => _processQueue(),
-            icon: Icon(Icons.cleaning_services, color: colorScheme.primary),
-            label: Text('Process Queue', style: TextStyle(color: colorScheme.primary, fontWeight: FontWeight.bold)),
+            icon: const Icon(Icons.playlist_remove_rounded),
+            label: const Text('Process due'),
           ),
+          const SizedBox(width: 4),
         ],
       ),
       body: StreamBuilder<QuerySnapshot>(
@@ -191,105 +213,114 @@ class _AdminDeletionQueueScreenState extends State<AdminDeletionQueueScreen> {
             return Center(child: Text("Error loading queue.", style: TextStyle(color: colorScheme.error)));
           }
           if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return Center(child: Text("No users in deletion queue.", style: textTheme.bodyLarge));
+            return const AppEmptyState(
+              icon: Icons.verified_user_outlined,
+              title: 'Queue is empty',
+              message: 'No accounts are scheduled for permanent deletion.',
+            );
           }
 
-          final queueItems = snapshot.data!.docs;
+          final queueItems = snapshot.data!.docs.where((d) {
+            return (d.data() as Map<String, dynamic>)['scheduledFor'] is Timestamp;
+          }).toList();
 
           return ListView.separated(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            itemCount: queueItems.length,
-            separatorBuilder: (context, index) => AppSpacing.gapMd,
+            padding: const EdgeInsets.only(bottom: 24),
+            itemCount: queueItems.length + 1,
+            separatorBuilder: (context, index) => const SizedBox(height: 12),
             itemBuilder: (context, index) {
-              final item = queueItems[index].data() as Map<String, dynamic>;
-              final targetUid = item['uid'] ?? queueItems[index].id;
-              final email = item['email'] ?? 'Unknown Email';
-              final scheduledForTs = item['scheduledFor'] as Timestamp?;
-              
-              if (scheduledForTs == null) return const SizedBox.shrink();
-              
-              final scheduledFor = scheduledForTs.toDate();
-              final dateStr = DateFormat('MMM dd, yyyy - hh:mm a').format(scheduledFor);
+              if (index == 0) return _buildInfoBanner(theme);
+              final doc = queueItems[index - 1];
+              final item = doc.data() as Map<String, dynamic>;
+              final targetUid = item['uid'] ?? doc.id;
+              final email = (item['email'] as String?) ?? 'Unknown email';
+              final scheduledFor = (item['scheduledFor'] as Timestamp).toDate();
+              final requestedAt = (item['requestedAt'] as Timestamp?)?.toDate() ??
+                  scheduledFor.subtract(const Duration(hours: 24));
+              final dateStr = DateFormat('d MMM yyyy, h:mm a').format(scheduledFor);
+              final total = scheduledFor.difference(requestedAt).inSeconds.clamp(1, 1 << 31);
 
-              return Container(
-                decoration: BoxDecoration(
-                  color: colorScheme.error.withValues(alpha: 0.05),
-                  border: Border.all(color: colorScheme.error.withValues(alpha: 0.2)),
-                  borderRadius: BorderRadius.circular(AppSpacing.sm),
-                ),
-                padding: const EdgeInsets.all(AppSpacing.md),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            email,
-                            style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: AppSurfaceCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          AppAvatar(name: email, radius: 20),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(email, style: textTheme.titleSmall, maxLines: 1, overflow: TextOverflow.ellipsis),
+                                Text('Deletes on $dateStr', style: textTheme.bodySmall),
+                              ],
+                            ),
                           ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: colorScheme.error.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(4),
-                            border: Border.all(color: colorScheme.error.withValues(alpha: 0.5)),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      StreamBuilder<DateTime>(
+                        stream: _clock,
+                        builder: (context, snap) {
+                          final now = snap.data ?? DateTime.now();
+                          final overdue = scheduledFor.isBefore(now);
+                          final elapsed = now.difference(requestedAt).inSeconds;
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(overdue ? Icons.hourglass_bottom_rounded : Icons.timer_outlined,
+                                      size: 16, color: colorScheme.error),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    _formatRemainingTime(scheduledFor, now),
+                                    style: textTheme.labelLarge?.copyWith(color: colorScheme.error),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(100),
+                                child: LinearProgressIndicator(
+                                  value: (elapsed / total).clamp(0.0, 1.0),
+                                  minHeight: 6,
+                                  backgroundColor: colorScheme.surfaceContainerHigh,
+                                  valueColor: AlwaysStoppedAnimation(colorScheme.error),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () => _cancelDeletion(theme, targetUid, email, doc.id),
+                              child: const Text('Cancel'),
+                            ),
                           ),
-                          child: Text('Pending', style: textTheme.bodySmall?.copyWith(color: colorScheme.error, fontWeight: FontWeight.bold)),
-                        ),
-                      ],
-                    ),
-                    AppSpacing.gapMd,
-                    Row(
-                      children: [
-                        Icon(Icons.schedule, size: 16, color: colorScheme.onSurfaceVariant),
-                        AppSpacing.gapSm,
-                        Text('Scheduled: $dateStr', style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
-                      ],
-                    ),
-                    AppSpacing.gapXs,
-                    Row(
-                      children: [
-                        Icon(Icons.timer, size: 16, color: colorScheme.error),
-                        AppSpacing.gapSm,
-                        // Use StreamBuilder for countdown timer
-                        StreamBuilder(
-                          stream: Stream.periodic(const Duration(seconds: 1)),
-                          builder: (context, _) {
-                            return Text(
-                              'Time Remaining: ${_formatRemainingTime(scheduledFor)}',
-                              style: textTheme.bodyMedium?.copyWith(color: colorScheme.error, fontWeight: FontWeight.bold),
-                            );
-                          }
-                        ),
-                      ],
-                    ),
-                    AppSpacing.gapMd,
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        OutlinedButton(
-                          onPressed: () => _cancelDeletion(theme, targetUid, email, queueItems[index].id),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: colorScheme.onSurface,
-                            side: BorderSide(color: theme.dividerColor),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: FilledButton(
+                              onPressed: () => _processQueue(targetUid: targetUid, label: email),
+                              style: FilledButton.styleFrom(
+                                minimumSize: const Size(0, 48),
+                                backgroundColor: colorScheme.error,
+                                foregroundColor: colorScheme.onError,
+                              ),
+                              child: const Text('Delete now'),
+                            ),
                           ),
-                          child: const Text('Cancel Deletion', style: TextStyle(fontWeight: FontWeight.bold)),
-                        ),
-                        AppSpacing.gapSm,
-                        ElevatedButton(
-                          onPressed: () => _processQueue(targetUid: targetUid),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: colorScheme.error,
-                            foregroundColor: colorScheme.onError,
-                          ),
-                          child: const Text('Process Now', style: TextStyle(fontWeight: FontWeight.bold)),
-                        ),
-                      ],
-                    )
-                  ],
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               );
             },
