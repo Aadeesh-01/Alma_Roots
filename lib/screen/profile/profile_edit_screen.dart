@@ -7,7 +7,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cs261_project/widget/app_avatar.dart';
+import 'package:cs261_project/widget/app_section.dart';
 import 'package:cs261_project/widget/app_loading_view.dart';
 import 'package:cs261_project/widget/app_snackbar.dart';
 
@@ -179,44 +180,52 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   Widget _buildProfileAvatar(ThemeData theme) {
     final colorScheme = theme.colorScheme;
     return Center(
-      child: Stack(
+      child: Column(
         children: [
-          Container(
-            width: 120,
-            height: 120,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: colorScheme.surface,
-              border: Border.all(color: theme.dividerColor, width: 2),
-            ),
-            child: _isUploading
-                ? const Center(child: CircularProgressIndicator())
-                : ClipOval(
-                    child: _profilePicUrl != null
-                        ? CachedNetworkImage(
-                            imageUrl: _profilePicUrl!,
-                            fit: BoxFit.cover,
-                            placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
-                            errorWidget: (context, url, error) => Icon(Icons.person, color: colorScheme.onSurfaceVariant, size: 60),
-                          )
-                        : Icon(Icons.person, color: colorScheme.onSurfaceVariant, size: 60),
-                  ),
-          ),
-          Positioned(
-            bottom: 0,
-            right: 0,
-            child: GestureDetector(
-              onTap: _isUploading ? null : _showImageSourceActionSheet,
-              child: Container(
-                padding: const EdgeInsets.all(AppSpacing.sm),
-                decoration: BoxDecoration(
-                  color: colorScheme.primary,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: colorScheme.surface, width: 2),
-                ),
-                child: Icon(Icons.camera_alt, color: colorScheme.onPrimary, size: 18),
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              GestureDetector(
+                onTap: _isUploading ? null : _showImageSourceActionSheet,
+                child: _isUploading
+                    ? Container(
+                        width: 112,
+                        height: 112,
+                        decoration: BoxDecoration(shape: BoxShape.circle, color: colorScheme.surfaceContainer),
+                        child: const Center(child: CircularProgressIndicator()),
+                      )
+                    : ValueListenableBuilder<TextEditingValue>(
+                        valueListenable: nameCtrl,
+                        builder: (_, value, __) => AppAvatar(
+                          name: value.text.isEmpty ? '?' : value.text,
+                          imageUrl: _profilePicUrl,
+                          radius: 53,
+                          ring: true,
+                        ),
+                      ),
               ),
-            ),
+              Positioned(
+                bottom: 2,
+                right: 2,
+                child: Material(
+                  color: colorScheme.primary,
+                  shape: CircleBorder(side: BorderSide(color: theme.scaffoldBackgroundColor, width: 3)),
+                  child: InkWell(
+                    customBorder: const CircleBorder(),
+                    onTap: _isUploading ? null : _showImageSourceActionSheet,
+                    child: Padding(
+                      padding: const EdgeInsets.all(9),
+                      child: Icon(Icons.photo_camera_outlined, color: colorScheme.onPrimary, size: 18),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          TextButton(
+            onPressed: _isUploading ? null : _showImageSourceActionSheet,
+            child: Text(_profilePicUrl?.isNotEmpty == true ? 'Change photo' : 'Add a photo'),
           ),
         ],
       ),
@@ -229,18 +238,41 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     required IconData icon,
     bool isNumeric = false,
     int maxLines = 1,
+    String? hint,
   }) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.md),
+      padding: const EdgeInsets.only(bottom: 14),
       child: TextFormField(
         controller: controller,
         keyboardType: isNumeric ? TextInputType.number : TextInputType.text,
+        textCapitalization: isNumeric ? TextCapitalization.none : TextCapitalization.sentences,
+        minLines: maxLines > 1 ? 3 : 1,
         maxLines: maxLines,
         decoration: InputDecoration(
           labelText: label,
-          prefixIcon: Icon(icon, color: theme.colorScheme.onSurfaceVariant),
+          hintText: hint,
+          alignLabelWithHint: maxLines > 1,
+          prefixIcon: maxLines > 1 ? null : Icon(icon, size: 20),
         ),
         validator: (value) => (value == null || value.isEmpty) ? 'Required' : null,
+      ),
+    );
+  }
+
+  Widget _buildSection(ThemeData theme, String title, String subtitle, List<Widget> children) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: AppSurfaceCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(title, style: theme.textTheme.titleMedium),
+            const SizedBox(height: 2),
+            Text(subtitle, style: theme.textTheme.bodySmall),
+            const SizedBox(height: 16),
+            ...children,
+          ],
+        ),
       ),
     );
   }
@@ -255,96 +287,89 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
 
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final textTheme = theme.textTheme;
 
     return Scaffold(
-      backgroundColor: colorScheme.surface,
-      appBar: AppBar(
-        title: const Text("Edit Profile"),
-        elevation: 0,
-        backgroundColor: colorScheme.surface,
-        foregroundColor: colorScheme.onSurface,
-        actions: [
-          if (!_isSaving)
-            TextButton(
-              onPressed: _saveProfile,
-              child: const Text("Save", style: TextStyle(fontWeight: FontWeight.bold)),
-            )
-          else
-            const Padding(
-              padding: EdgeInsets.all(AppSpacing.md),
-              child: SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(AppSpacing.xl),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _buildProfileAvatar(theme),
-              AppSpacing.gapXl,
+      appBar: AppBar(title: const Text("Edit profile")),
+      body: Form(
+        key: _formKey,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          children: [
+            _buildProfileAvatar(theme),
+            const SizedBox(height: 12),
 
-              Text("Personal Details", style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
-              AppSpacing.gapMd,
+            _buildSection(theme, "About you", "How others will see you across Alma Roots.", [
               _buildTextField(
                 theme,
                 controller: nameCtrl,
-                label: 'Full Name',
-                icon: Icons.person_outline,
+                label: 'Full name',
+                icon: Icons.person_outline_rounded,
               ),
-
               if (_role == 'student' || _role == 'admin')
                 _buildTextField(
                   theme,
                   controller: rollCtrl,
-                  label: 'Roll Number',
-                  icon: Icons.badge_outlined,
+                  label: 'Roll number',
+                  icon: Icons.tag_rounded,
                   isNumeric: true,
                 ),
-
               if (_role != 'admin')
                 _buildTextField(
                   theme,
                   controller: yearCtrl,
-                  label: 'Graduation Year',
+                  label: 'Graduation year',
                   icon: Icons.school_outlined,
                   isNumeric: true,
                 ),
-
               if (_role == 'alumni')
                 _buildTextField(
                   theme,
                   controller: companyCtrl,
-                  label: 'Organization / Company',
-                  icon: Icons.business_outlined,
+                  label: 'Organization / company',
+                  icon: Icons.apartment_rounded,
                 ),
+            ]),
 
-              AppSpacing.gapLg,
-              Text("Professional Profile", style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
-              AppSpacing.gapMd,
-
+            _buildSection(theme, "Professional profile", "Helps alumni and mentors find you in search.", [
               _buildTextField(
                 theme,
                 controller: interestCtrl,
-                label: _role == 'alumni' ? 'Areas of Expertise (Comma separated)' : 'Interests & Skills (Comma separated)',
-                icon: Icons.star_outline,
+                label: _role == 'alumni' ? 'Areas of expertise' : 'Interests & skills',
+                hint: 'e.g. Flutter, Product design, Finance',
+                icon: Icons.auto_awesome_outlined,
               ),
-
               _buildTextField(
                 theme,
                 controller: bioCtrl,
-                label: 'Biography',
-                icon: Icons.edit_note_outlined,
-                maxLines: 4,
+                label: 'Bio',
+                hint: 'A few lines about what you do and what you are looking for',
+                icon: Icons.notes_rounded,
+                maxLines: 6,
               ),
-            ],
+            ]),
+          ],
+        ),
+      ),
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: colorScheme.surface,
+          border: Border(top: BorderSide(color: colorScheme.outlineVariant)),
+        ),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        child: SafeArea(
+          top: false,
+          child: SizedBox(
+            height: 54,
+            child: FilledButton(
+              onPressed: _isSaving ? null : _saveProfile,
+              child: _isSaving
+                  ? SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2.5, color: colorScheme.onPrimary),
+                    )
+                  : const Text('Save profile'),
+            ),
           ),
         ),
       ),

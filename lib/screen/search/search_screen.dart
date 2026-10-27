@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:cs261_project/service/search_service.dart';
 import 'package:cs261_project/screen/profile/profile_screen.dart';
 import 'package:cs261_project/screen/search/qr_scanner_screen.dart';
-import 'package:cs261_project/theme/app_spacing.dart';
+import 'package:cs261_project/theme/app_colors.dart';
+import 'package:cs261_project/widget/app_avatar.dart';
+import 'package:cs261_project/widget/app_section.dart';
 import 'package:cs261_project/widget/app_empty_state.dart';
 import 'package:cs261_project/widget/app_error_state.dart';
 
@@ -111,12 +113,27 @@ class _SearchScreenState extends State<SearchScreen> {
     }
   }
 
+  Future<void> _scanQr() async {
+    final scannedCode = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const QRScannerScreen()),
+    );
+    if (scannedCode != null && scannedCode.isNotEmpty) {
+      _searchController.text = scannedCode;
+      await _performSearch(scannedCode);
+    }
+  }
+
+  void _quickSearch(String term) {
+    _searchController.text = term;
+    _searchController.selection = TextSelection.collapsed(offset: term.length);
+    _performSearch(term);
+  }
+
   Widget _buildSearchBar(ThemeData theme) {
     final colorScheme = theme.colorScheme;
 
-    return Container(
-      color: colorScheme.surface,
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
       child: Row(
         children: [
           Expanded(
@@ -130,44 +147,129 @@ class _SearchScreenState extends State<SearchScreen> {
                 }
               },
               decoration: InputDecoration(
-                hintText: 'Search people, skills, companies...',
-                prefixIcon: Icon(Icons.search, color: colorScheme.onSurfaceVariant),
+                hintText: 'Search name, skill, company…',
+                prefixIcon: const Icon(Icons.search_rounded),
+                suffixIcon: ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: _searchController,
+                  builder: (_, value, __) => value.text.isEmpty
+                      ? const SizedBox.shrink()
+                      : IconButton(
+                          icon: const Icon(Icons.close_rounded, size: 20),
+                          onPressed: () => _searchController.clear(),
+                        ),
+                ),
                 filled: true,
-                fillColor: colorScheme.surfaceContainerHighest,
+                fillColor: colorScheme.surface,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(AppSpacing.sm),
-                  borderSide: BorderSide(color: theme.dividerColor),
+                  borderRadius: BorderRadius.circular(100),
+                  borderSide: BorderSide(color: colorScheme.outlineVariant),
                 ),
                 enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(AppSpacing.sm),
-                  borderSide: BorderSide(color: theme.dividerColor),
+                  borderRadius: BorderRadius.circular(100),
+                  borderSide: BorderSide(color: colorScheme.outlineVariant),
                 ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 0),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(100),
+                  borderSide: BorderSide(color: colorScheme.primary, width: 1.6),
+                ),
               ),
             ),
           ),
-          AppSpacing.gapSm,
-          Container(
-            decoration: BoxDecoration(
-              color: colorScheme.surface,
-              borderRadius: BorderRadius.circular(AppSpacing.sm),
-              border: Border.all(color: theme.dividerColor),
-            ),
-            child: IconButton(
-              icon: Icon(Icons.qr_code_scanner, color: colorScheme.primary),
-              onPressed: () async {
-                final scannedCode = await Navigator.of(context).push<String>(
-                  MaterialPageRoute(builder: (_) => const QRScannerScreen()),
-                );
-                if (scannedCode != null && scannedCode.isNotEmpty) {
-                  _searchController.text = scannedCode;
-                  await _performSearch(scannedCode);
-                }
-              },
-            ),
+          const SizedBox(width: 10),
+          IconButton.filled(
+            tooltip: 'Scan QR code',
+            onPressed: _scanQr,
+            style: IconButton.styleFrom(minimumSize: const Size(50, 50)),
+            icon: const Icon(Icons.qr_code_scanner_rounded),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildIntro(ThemeData theme) {
+    final cs = theme.colorScheme;
+    final text = theme.textTheme;
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+      children: [
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            gradient: AppColors.brandGradient,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Find your people', style: text.titleLarge?.copyWith(color: Colors.white)),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Search alumni and students by name, skill, company or year, or scan a profile QR code.',
+                      style: text.bodyMedium?.copyWith(color: Colors.white.withValues(alpha: 0.78)),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: AppColors.gold, width: 1.5),
+                ),
+                child: const Icon(Icons.diversity_3_rounded, color: AppColors.gold),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+        Text('Quick searches', style: text.titleMedium),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final (icon, label, term) in [
+              (Icons.workspace_premium_outlined, 'Alumni', 'alumni'),
+              (Icons.school_outlined, 'Students', 'student'),
+              (Icons.admin_panel_settings_outlined, 'Admins', 'admin'),
+            ])
+              ActionChip(
+                avatar: Icon(icon, size: 18, color: cs.primary),
+                label: Text(label),
+                onPressed: () => _quickSearch(term),
+              ),
+            ActionChip(
+              avatar: Icon(Icons.qr_code_scanner_rounded, size: 18, color: cs.primary),
+              label: const Text('Scan a QR code'),
+              onPressed: _scanQr,
+            ),
+          ],
+        ),
+        const SizedBox(height: 24),
+        AppSurfaceCard(
+          color: cs.surfaceContainerLow,
+          child: Row(
+            children: [
+              Icon(Icons.tips_and_updates_outlined, color: cs.secondary),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Tip: type the start of a name or skill, like "and" for Android or "goo" for Google.',
+                  style: text.bodySmall,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -177,71 +279,80 @@ class _SearchScreenState extends State<SearchScreen> {
 
     final skillsRaw = hit['skills'] ?? hit['interest'];
     final skills = (skillsRaw is List)
-        ? skillsRaw.take(3).join(' • ')
-        : (skillsRaw?.toString() ?? '');
+        ? skillsRaw.map((s) => s.toString().trim()).where((s) => s.isNotEmpty).take(3).toList()
+        : (skillsRaw?.toString() ?? '').split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).take(3).toList();
 
     final role = hit['role']?.toString().toLowerCase() ?? 'student';
-    String subtitle = 'Student';
-    
+    String subtitle;
     if (role == 'alumni') {
-      subtitle = hit['company'] ?? 'Alumni';
+      final company = hit['company']?.toString() ?? '';
+      subtitle = company.isNotEmpty ? company : 'Alumni';
     } else if (role == 'admin') {
       subtitle = 'Administrator';
     } else {
-      final year = hit['year'];
-      subtitle = year != null && year.isNotEmpty ? 'Class of $year' : 'Student';
+      final year = hit['year']?.toString() ?? '';
+      subtitle = year.isNotEmpty ? 'Class of $year' : 'Student';
     }
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: AppSpacing.sm),
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
-        border: Border.all(color: theme.dividerColor),
-        borderRadius: BorderRadius.circular(AppSpacing.sm),
-      ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.all(AppSpacing.md),
-        leading: CircleAvatar(
-          backgroundColor: colorScheme.primary.withValues(alpha: 0.1),
-          radius: 24,
-          child: Text(
-            (hit['name'] ?? 'N').toString().isNotEmpty 
-              ? (hit['name'] ?? 'N').substring(0, 1).toUpperCase()
-              : 'N',
-            style: TextStyle(fontWeight: FontWeight.bold, color: colorScheme.primary),
-          ),
-        ),
-        title: Text(
-          hit['name'] ?? 'Unknown User',
-          style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    final rawName = (hit['name'] ?? '').toString().trim();
+    final email = (hit['email'] ?? '').toString();
+    final name = rawName.isNotEmpty ? rawName : (email.isNotEmpty ? email.split('@').first : 'Member');
+    final image = (hit['profileImage'] ?? hit['picture'])?.toString();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: AppSurfaceCard(
+        padding: const EdgeInsets.all(14),
+        onTap: () {
+          Navigator.of(context).push(MaterialPageRoute(
+            builder: (context) => ProfileScreen(
+              instituteId: widget.instituteId,
+              viewUid: hit['uid'] ?? hit['id'],
+            ),
+          ));
+        },
+        child: Row(
           children: [
-            AppSpacing.gapXs,
-            Text(subtitle, style: textTheme.bodyMedium),
-            if (skills.isNotEmpty) ...[
-              AppSpacing.gapXs,
-              Text(skills, style: textTheme.bodySmall?.copyWith(color: colorScheme.primary), maxLines: 1, overflow: TextOverflow.ellipsis),
-            ],
-          ],
-        ),
-        trailing: OutlinedButton(
-          onPressed: () {
-            Navigator.of(context).push(MaterialPageRoute(
-              builder: (context) => ProfileScreen(
-                instituteId: widget.instituteId,
-                viewUid: hit['uid'] ?? hit['id'],
+            AppAvatar(name: name, imageUrl: image, radius: 26),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(name, style: textTheme.titleSmall, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      ),
+                      const SizedBox(width: 8),
+                      RoleBadge(role: role, dense: true),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(subtitle, style: textTheme.bodySmall, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  if (skills.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: skills
+                          .map((s) => Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: colorScheme.surfaceContainerLow,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: colorScheme.outlineVariant),
+                                ),
+                                child: Text(s, style: textTheme.labelSmall),
+                              ))
+                          .toList(),
+                    ),
+                  ],
+                ],
               ),
-            ));
-          },
-          style: OutlinedButton.styleFrom(
-            foregroundColor: colorScheme.primary,
-            side: BorderSide(color: colorScheme.primary),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 0),
-          ),
-          child: const Text("View"),
+            ),
+            Icon(Icons.chevron_right_rounded, color: colorScheme.onSurfaceVariant),
+          ],
         ),
       ),
     );
@@ -250,45 +361,46 @@ class _SearchScreenState extends State<SearchScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+
+    Widget body;
+    if (_isLoading) {
+      body = const Center(child: CircularProgressIndicator());
+    } else if (_errorMessage != null) {
+      body = AppErrorState(message: _errorMessage!);
+    } else if (_searchResults.isEmpty && _searchController.text.isNotEmpty) {
+      body = const AppEmptyState(
+        icon: Icons.search_off_rounded,
+        title: 'No matches',
+        message: 'Try a shorter word, a skill, or a company name.',
+      );
+    } else if (_searchResults.isEmpty) {
+      body = _buildIntro(theme);
+    } else {
+      body = ListView.builder(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+        itemCount: _searchResults.length + 1,
+        itemBuilder: (context, index) {
+          if (index == 0) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10, left: 4),
+              child: Text(
+                '${_searchResults.length} ${_searchResults.length == 1 ? 'person' : 'people'}',
+                style: theme.textTheme.labelLarge?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              ),
+            );
+          }
+          return _buildResultItem(theme, _searchResults[index - 1]);
+        },
+      );
+    }
 
     return Scaffold(
-      backgroundColor: colorScheme.surface,
-      appBar: widget.isNested ? null : AppBar(
-        title: const Text('Network'),
-        backgroundColor: colorScheme.surface,
-        foregroundColor: colorScheme.onSurface,
-        elevation: 0,
-      ),
+      appBar: widget.isNested ? null : AppBar(title: const Text('Network')),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _buildSearchBar(theme),
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _errorMessage != null
-                    ? AppErrorState(message: _errorMessage!)
-                    : _searchResults.isEmpty && _searchController.text.isNotEmpty
-                        ? const AppEmptyState(
-                            icon: Icons.search_off,
-                            title: 'No Results Found',
-                            message: 'Try adjusting your search terms or checking for typos.',
-                          )
-                        : _searchResults.isEmpty
-                            ? const AppEmptyState(
-                                icon: Icons.person_search,
-                                title: 'Find Connections',
-                                message: 'Search for alumni by name, skills, company, or department.',
-                              )
-                            : ListView.builder(
-                                padding: const EdgeInsets.all(AppSpacing.md),
-                                itemCount: _searchResults.length,
-                                itemBuilder: (context, index) {
-                                  return _buildResultItem(theme, _searchResults[index]);
-                                },
-                              ),
-          ),
+          Expanded(child: body),
         ],
       ),
     );

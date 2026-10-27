@@ -160,6 +160,7 @@ class _AdminAddParticipantScreenState extends State<AdminAddParticipantScreen> {
                   AppSpacing.gapLg,
                   DropdownButtonFormField<String>(
                     value: _selectedInstituteId,
+                    isExpanded: true,
                     items: _institutes
                         .map(
                           (inst) => DropdownMenuItem<String>(

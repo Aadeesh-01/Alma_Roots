@@ -279,10 +279,14 @@ class AdminService {
   }
 
   /// Admin cancels a scheduled permanent deletion
+  ///
+  /// [queueDocId] is the queue entry's document ID; it defaults to [targetUid]
+  /// but older entries may not use the uid as their ID.
   static Future<void> cancelPermanentDeletion({
     required String instituteId,
     required String targetUid,
     required String targetEmail,
+    String? queueDocId,
   }) async {
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) throw Exception("Admin must be logged in.");
@@ -297,7 +301,14 @@ class AdminService {
         .collection('institutes')
         .doc(instituteId)
         .collection('deletion_queue')
-        .doc(targetUid);
+        .doc(queueDocId ?? targetUid);
+
+    // update() fails on missing documents, so check both before writing.
+    final snaps = await Future.wait([queueRef.get(), participantRef.get()]);
+    if (!snaps[0].exists) {
+      throw Exception("This deletion request no longer exists.");
+    }
+    final participantExists = snaps[1].exists;
 
     final batch = _firestore.batch();
 
@@ -308,13 +319,15 @@ class AdminService {
       'cancelledBy': currentUser.uid,
     });
 
-    // 2. Reset Participant Doc
-    batch.update(participantRef, {
-      'pendingPermanentDeletion': false,
-      'permanentDeletionRequestedAt': null,
-      'permanentDeletionScheduledFor': null,
-      'permanentDeletionRequestedBy': null,
-    });
+    // 2. Reset Participant Doc (it may already be gone for stale queue entries)
+    if (participantExists) {
+      batch.update(participantRef, {
+        'pendingPermanentDeletion': false,
+        'permanentDeletionRequestedAt': null,
+        'permanentDeletionScheduledFor': null,
+        'permanentDeletionRequestedBy': null,
+      });
+    }
 
     // 3. Audit Logging
     final auditRef = _firestore
@@ -336,7 +349,8 @@ class AdminService {
   }
   static Future<Map<String, dynamic>> processDeletionQueue({required String instituteId, String? targetUid}) async {
     try {
-      final callable = FirebaseFunctions.instance.httpsCallable('processDeletionQueueNow');
+      final callable = FirebaseFunctions.instanceFor(region: 'asia-south1')
+          .httpsCallable('processDeletionQueueNow');
       final result = await callable.call({
         'instituteId': instituteId,
         'targetUid': targetUid,

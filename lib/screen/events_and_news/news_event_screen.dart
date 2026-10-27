@@ -4,7 +4,11 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../model/news_event_model.dart';
 import '../../service/news_event_service.dart';
 import 'news_event_detail_screen.dart';
-import 'package:cs261_project/theme/app_spacing.dart';
+import 'package:intl/intl.dart';
+import 'package:cs261_project/theme/app_colors.dart';
+import 'package:cs261_project/widget/app_avatar.dart';
+import 'package:cs261_project/widget/app_section.dart';
+import 'package:cs261_project/widget/app_snackbar.dart';
 
 class NewsEventScreen extends StatefulWidget {
   final String instituteId;
@@ -87,7 +91,7 @@ class _NewsEventScreenState extends State<NewsEventScreen> with SingleTickerProv
     if (filterType != 'all') {
       posts = posts.where((p) => p.type == filterType).toList();
     }
-    
+
     // Visibility filtering
     posts = posts.where((p) {
       if (p.visibility == 'public') return true;
@@ -98,13 +102,13 @@ class _NewsEventScreenState extends State<NewsEventScreen> with SingleTickerProv
     }).toList();
 
     if (posts.isEmpty) {
-      return Center(child: Text("No posts match this filter.", style: theme.textTheme.bodyLarge));
+      return _buildEmptyFeed(theme, filterType);
     }
 
     return ListView.separated(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
       itemCount: posts.length,
-      separatorBuilder: (_, __) => AppSpacing.gapMd,
+      separatorBuilder: (_, __) => const SizedBox(height: 14),
       itemBuilder: (context, index) {
         return _PostCard(
           post: posts[index],
@@ -117,107 +121,118 @@ class _NewsEventScreenState extends State<NewsEventScreen> with SingleTickerProv
     );
   }
 
+  Widget _buildEmptyFeed(ThemeData theme, String filterType) {
+    final cs = theme.colorScheme;
+    final label = switch (filterType) {
+      'news' => 'No news yet',
+      'event' => 'No events yet',
+      'experience' => 'No experiences shared yet',
+      _ => 'Your feed is quiet',
+    };
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(color: cs.secondaryContainer, shape: BoxShape.circle),
+              child: Icon(Icons.forest_outlined, size: 34, color: cs.onSecondaryContainer),
+            ),
+            const SizedBox(height: 16),
+            Text(label, style: theme.textTheme.titleLarge),
+            const SizedBox(height: 6),
+            Text(
+              'Share an experience, an opportunity or an event with your network.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+            ),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              onPressed: _showAddPostModal,
+              icon: const Icon(Icons.edit_outlined, size: 18),
+              label: const Text('Create a post'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  PreferredSizeWidget _buildTabBar() {
+    return PreferredSize(
+      preferredSize: const Size.fromHeight(56),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+        child: SizedBox(
+          height: 40,
+          child: TabBar(
+            controller: _tabController,
+            isScrollable: true,
+            tabs: const [
+              Tab(text: 'All'),
+              Tab(text: 'News'),
+              Tab(text: 'Events'),
+              Tab(text: 'Experiences'),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final textTheme = theme.textTheme;
 
     if (_isLoadingRole) {
-      return Scaffold(
-        backgroundColor: colorScheme.surface,
-        body: const Center(child: CircularProgressIndicator()),
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
       );
     }
 
     return Scaffold(
-      backgroundColor: colorScheme.surface,
       appBar: widget.isNested ? null : AppBar(
         title: const Text('News & Events'),
-        backgroundColor: colorScheme.surface,
-        foregroundColor: colorScheme.onSurface,
-        elevation: 1,
-        shadowColor: theme.dividerColor,
-        bottom: TabBar(
-          controller: _tabController,
-          isScrollable: true,
-          dividerColor: Colors.transparent,
-          indicatorSize: TabBarIndicatorSize.tab,
-          indicator: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            color: colorScheme.primary.withValues(alpha: 0.1),
-          ),
-          labelColor: colorScheme.primary,
-          unselectedLabelColor: colorScheme.onSurfaceVariant,
-          tabs: const [
-            Tab(text: 'All'),
-            Tab(text: 'News'),
-            Tab(text: 'Events'),
-            Tab(text: 'Experiences'),
-          ],
-        ),
+        bottom: _buildTabBar(),
       ),
       body: Column(
         children: [
-          if (widget.isNested)
-            Container(
-              color: colorScheme.surface,
-              width: double.infinity,
-              child: TabBar(
-                controller: _tabController,
-                isScrollable: true,
-                dividerColor: Colors.transparent,
-                indicatorSize: TabBarIndicatorSize.tab,
-                indicator: BoxDecoration(
-                  borderRadius: BorderRadius.circular(20),
-                  color: colorScheme.primary.withValues(alpha: 0.1),
-                ),
-                labelColor: colorScheme.primary,
-                unselectedLabelColor: colorScheme.onSurfaceVariant,
-                tabs: const [
-                  Tab(text: 'All'),
-                  Tab(text: 'News'),
-                  Tab(text: 'Events'),
-                  Tab(text: 'Experiences'),
-                ],
-              ),
-            ),
+          if (widget.isNested) _buildTabBar(),
           Expanded(
             child: StreamBuilder<List<NewsEventPost>>(
-        stream: _postsStream,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(child: Text("Error loading posts.", style: TextStyle(color: colorScheme.error)));
-          }
-          final allPosts = snapshot.data ?? [];
+              stream: _postsStream,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return Center(child: Text("Error loading posts.", style: TextStyle(color: colorScheme.error)));
+                }
+                final allPosts = snapshot.data ?? [];
 
-          if (allPosts.isEmpty) {
-            return Center(child: Text("No posts found.", style: textTheme.bodyLarge));
-          }
-
-          return TabBarView(
-            controller: _tabController,
-            children: [
-              _buildFeed(theme, allPosts, 'all'),
-              _buildFeed(theme, allPosts, 'news'),
-              _buildFeed(theme, allPosts, 'event'),
-              _buildFeed(theme, allPosts, 'experience'),
-            ],
-          );
-        },
+                return TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildFeed(theme, allPosts, 'all'),
+                    _buildFeed(theme, allPosts, 'news'),
+                    _buildFeed(theme, allPosts, 'event'),
+                    _buildFeed(theme, allPosts, 'experience'),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
       ),
-    ),
-  ],
-),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: FloatingActionButton.extended(
         heroTag: null,
         onPressed: _showAddPostModal,
-        backgroundColor: colorScheme.primary,
-        foregroundColor: colorScheme.onPrimary,
-        child: const Icon(Icons.add),
+        icon: const Icon(Icons.edit_outlined),
+        label: const Text('Post'),
       ),
     );
   }
@@ -291,204 +306,257 @@ class _PostCard extends StatelessWidget {
     }
   }
 
+  void _openDetail(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => NewsEventDetailScreen(
+          instituteId: instituteId,
+          post: post,
+          userRole: userRole,
+        ),
+      ),
+    );
+  }
+
+  static String categoryLabel(String category) {
+    final words = category.replaceAll('_', ' ').split(' ').where((w) => w.isNotEmpty);
+    return words.map((w) => w[0].toUpperCase() + w.substring(1)).join(' ');
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
     final bool canEditOrDelete = currentUserId == post.authorUid || userRole == 'admin';
+    final authorName = post.authorName.isNotEmpty ? post.authorName : 'Member';
+    final isEvent = post.type == 'event' && post.eventDate != null;
 
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppSpacing.md),
-        side: BorderSide(color: theme.dividerColor.withValues(alpha: 0.5)),
-      ),
-      color: colorScheme.surface,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppSpacing.md),
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => NewsEventDetailScreen(
-                instituteId: instituteId,
-                post: post,
-                userRole: userRole,
-              ),
+    final (IconData typeIcon, Color typeColor) = switch (post.type) {
+      'news' => (Icons.campaign_outlined, AppColors.clay),
+      'event' => (Icons.event_outlined, AppColors.sage),
+      _ => (Icons.auto_awesome_outlined, AppColors.goldDeep),
+    };
+    final chipFg = theme.brightness == Brightness.dark ? Color.lerp(typeColor, Colors.white, 0.45)! : typeColor;
+
+    return AppSurfaceCard(
+      onTap: () => _openDetail(context),
+      padding: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Author row
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 6, 0),
+            child: Row(
+              children: [
+                AppAvatar(name: authorName, radius: 20),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(authorName, style: textTheme.titleSmall, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      const SizedBox(height: 3),
+                      Row(
+                        children: [
+                          RoleBadge(role: post.authorRole, dense: true),
+                          const SizedBox(width: 8),
+                          Text(_getTimeAgo(post.createdAt), style: textTheme.bodySmall),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                if (post.isPinned)
+                  Tooltip(
+                    message: 'Pinned',
+                    child: Icon(Icons.push_pin_rounded, color: AppColors.gold, size: 18),
+                  ),
+                if (canEditOrDelete)
+                  PopupMenuButton<String>(
+                    icon: Icon(Icons.more_horiz_rounded, color: colorScheme.onSurfaceVariant),
+                    onSelected: (val) {
+                      if (val == 'edit') {
+                        _editPost(context);
+                      } else if (val == 'delete') {
+                        _showDeleteConfirmation(context);
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(
+                        value: 'edit',
+                        child: ListTile(leading: Icon(Icons.edit_outlined), title: Text('Edit'), contentPadding: EdgeInsets.zero),
+                      ),
+                      PopupMenuItem(
+                        value: 'delete',
+                        child: ListTile(
+                          leading: Icon(Icons.delete_outline_rounded, color: colorScheme.error),
+                          title: Text('Delete', style: TextStyle(color: colorScheme.error)),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                    ],
+                  )
+                else
+                  const SizedBox(width: 10),
+              ],
             ),
-          );
-        },
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Author Section
-            Padding(
-              padding: const EdgeInsets.all(AppSpacing.md),
+          ),
+
+          // Content
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: typeColor.withValues(alpha: theme.brightness == Brightness.dark ? 0.22 : 0.09),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(typeIcon, size: 14, color: chipFg),
+                      const SizedBox(width: 5),
+                      Text(
+                        categoryLabel(post.category),
+                        style: textTheme.labelSmall?.copyWith(color: chipFg),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(post.title, style: textTheme.titleLarge?.copyWith(fontSize: 19, height: 1.25)),
+                const SizedBox(height: 6),
+                Text(
+                  post.description,
+                  maxLines: 4,
+                  overflow: TextOverflow.ellipsis,
+                  style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
+                ),
+              ],
+            ),
+          ),
+
+          // Event block
+          if (isEvent)
+            Container(
+              margin: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: colorScheme.outlineVariant),
+              ),
               child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  CircleAvatar(
-                    backgroundColor: colorScheme.primary.withValues(alpha: 0.1),
-                    child: Text(
-                      post.authorName.isNotEmpty ? post.authorName[0].toUpperCase() : '?',
-                      style: TextStyle(fontWeight: FontWeight.bold, color: colorScheme.primary),
+                  Container(
+                    width: 50,
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    decoration: BoxDecoration(
+                      color: colorScheme.primary,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      children: [
+                        Text(
+                          DateFormat('MMM').format(post.eventDate!).toUpperCase(),
+                          style: textTheme.labelSmall?.copyWith(color: colorScheme.onPrimary.withValues(alpha: 0.8)),
+                        ),
+                        Text(
+                          DateFormat('d').format(post.eventDate!),
+                          style: textTheme.titleLarge?.copyWith(color: colorScheme.onPrimary, height: 1.1),
+                        ),
+                      ],
                     ),
                   ),
-                  AppSpacing.gapSm,
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(post.authorName, style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
                         Text(
-                          '${post.authorRole.toUpperCase()} • ${_getTimeAgo(post.createdAt)}',
-                          style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
+                          DateFormat('EEEE, d MMMM').format(post.eventDate!),
+                          style: textTheme.titleSmall,
                         ),
-                      ],
-                    ),
-                  ),
-                  if (post.isPinned) Icon(Icons.push_pin, color: colorScheme.secondary, size: 20),
-                  if (canEditOrDelete)
-                    PopupMenuButton<String>(
-                      icon: Icon(Icons.more_horiz, color: colorScheme.onSurfaceVariant),
-                      onSelected: (val) {
-                        if (val == 'edit') {
-                          _editPost(context);
-                        } else if (val == 'delete') {
-                          _showDeleteConfirmation(context);
-                        }
-                      },
-                      itemBuilder: (context) => [
-                        const PopupMenuItem(value: 'edit', child: Text("Edit")),
-                        PopupMenuItem(value: 'delete', child: Text("Delete", style: TextStyle(color: colorScheme.error))),
-                      ],
-                    ),
-                ],
-              ),
-            ),
-            
-            // Content Section
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(post.title, style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
-                  AppSpacing.gapSm,
-                  Text(
-                    post.description,
-                    maxLines: 4,
-                    overflow: TextOverflow.ellipsis,
-                    style: textTheme.bodyLarge?.copyWith(height: 1.4),
-                  ),
-                ],
-              ),
-            ),
-
-            // Event Info Block (if applicable)
-            if (post.type == 'event' && post.eventDate != null) ...[
-              AppSpacing.gapMd,
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-                padding: const EdgeInsets.all(AppSpacing.md),
-                decoration: BoxDecoration(
-                  color: colorScheme.secondaryContainer.withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(AppSpacing.sm),
-                  border: Border.all(color: colorScheme.secondary.withValues(alpha: 0.3)),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(AppSpacing.sm),
-                      decoration: BoxDecoration(
-                        color: colorScheme.secondary.withValues(alpha: 0.1),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(Icons.calendar_month, color: colorScheme.secondary),
-                    ),
-                    AppSpacing.gapMd,
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text("Upcoming Event", style: textTheme.bodySmall?.copyWith(color: colorScheme.secondary, fontWeight: FontWeight.bold)),
-                          Text(
-                            "${post.eventDate!.month}/${post.eventDate!.day}/${post.eventDate!.year}",
-                            style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                        if (post.eventLocation != null && post.eventLocation!.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Row(
+                            children: [
+                              Icon(Icons.place_outlined, size: 14, color: colorScheme.onSurfaceVariant),
+                              const SizedBox(width: 3),
+                              Expanded(
+                                child: Text(
+                                  post.eventLocation!,
+                                  style: textTheme.bodySmall,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
                           ),
-                          if (post.eventLocation != null && post.eventLocation!.isNotEmpty)
-                            Text(post.eventLocation!, style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
                         ],
-                      ),
+                        const SizedBox(height: 2),
+                        Text(
+                          post.maxAttendees != null
+                              ? '${post.attendeeCount} / ${post.maxAttendees} going'
+                              : '${post.attendeeCount} going',
+                          style: textTheme.labelSmall?.copyWith(color: colorScheme.secondary),
+                        ),
+                      ],
                     ),
-                    if (post.registrationRequired)
-                      ElevatedButton(
-                        onPressed: () {},
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: colorScheme.secondary,
-                          foregroundColor: colorScheme.onSecondary,
-                          visualDensity: VisualDensity.compact,
-                        ),
-                        child: const Text("RSVP"),
+                  ),
+                  if (post.registrationRequired)
+                    FilledButton.tonal(
+                      onPressed: () => _openDetail(context),
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size(0, 38),
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
                       ),
-                  ],
-                ),
-              ),
-            ],
-
-            AppSpacing.gapMd,
-            Divider(height: 1, color: theme.dividerColor.withValues(alpha: 0.5)),
-
-            // Interactive Bottom Bar
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  TextButton.icon(
-                    onPressed: () async {
-                      if (currentUserId.isEmpty) return;
-                      try {
-                        final userName = FirebaseAuth.instance.currentUser?.displayName ?? 'User';
-                        await service.toggleLike(instituteId, post.id, currentUserId, userName);
-                      } catch (e) {
-                        if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
-                      }
-                    },
-                    icon: Icon(Icons.thumb_up_outlined, color: colorScheme.onSurfaceVariant, size: 20),
-                    label: Text('Like (${post.likeCount})', style: TextStyle(color: colorScheme.onSurfaceVariant)),
-                    style: TextButton.styleFrom(foregroundColor: colorScheme.onSurfaceVariant),
-                  ),
-                  TextButton.icon(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => NewsEventDetailScreen(
-                            instituteId: instituteId,
-                            post: post,
-                            userRole: userRole,
-                          ),
-                        ),
-                      );
-                    },
-                    icon: Icon(Icons.comment_outlined, color: colorScheme.onSurfaceVariant, size: 20),
-                    label: Text('Comment (${post.commentCount})', style: TextStyle(color: colorScheme.onSurfaceVariant)),
-                    style: TextButton.styleFrom(foregroundColor: colorScheme.onSurfaceVariant),
-                  ),
-                  TextButton.icon(
-                    onPressed: () {},
-                    icon: Icon(Icons.share_outlined, color: colorScheme.onSurfaceVariant, size: 20),
-                    label: Text('Share', style: TextStyle(color: colorScheme.onSurfaceVariant)),
-                    style: TextButton.styleFrom(foregroundColor: colorScheme.onSurfaceVariant),
-                  ),
+                      child: const Text('RSVP'),
+                    ),
                 ],
               ),
             ),
-          ],
-        ),
+
+          // Engagement bar
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 6),
+            child: Row(
+              children: [
+                TextButton.icon(
+                  onPressed: () async {
+                    if (currentUserId.isEmpty) return;
+                    try {
+                      final userName = FirebaseAuth.instance.currentUser?.displayName ?? 'User';
+                      await service.toggleLike(instituteId, post.id, currentUserId, userName);
+                    } catch (e) {
+                      if (context.mounted) AppSnackBar.showError(context, 'Could not update like');
+                    }
+                  },
+                  style: TextButton.styleFrom(foregroundColor: colorScheme.onSurfaceVariant),
+                  icon: const Icon(Icons.favorite_border_rounded, size: 19),
+                  label: Text('${post.likeCount}'),
+                ),
+                TextButton.icon(
+                  onPressed: () => _openDetail(context),
+                  style: TextButton.styleFrom(foregroundColor: colorScheme.onSurfaceVariant),
+                  icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
+                  label: Text('${post.commentCount}'),
+                ),
+                const Spacer(),
+                TextButton(
+                  onPressed: () => _openDetail(context),
+                  child: const Text('Read more'),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -624,6 +692,22 @@ class CreatePostModalState extends State<CreatePostModal> {
           'waitlistEnabled': _waitlistEnabled,
         });
       } else {
+        // Prefer the profile name; the Auth display name is usually empty or the email.
+        String authorName = user.displayName?.trim() ?? '';
+        try {
+          final participant = await FirebaseFirestore.instance
+              .collection('institutes')
+              .doc(widget.instituteId)
+              .collection('participants')
+              .doc(user.uid)
+              .get();
+          final profileName = (participant.data()?['name'] as String?)?.trim() ?? '';
+          if (profileName.isNotEmpty) authorName = profileName;
+        } catch (_) {}
+        if (authorName.isEmpty || authorName.contains('@')) {
+          authorName = authorName.contains('@') ? authorName.split('@').first : 'Member';
+        }
+
         final post = NewsEventPost(
           id: '',
           instituteId: widget.instituteId,
@@ -633,7 +717,7 @@ class CreatePostModalState extends State<CreatePostModal> {
           title: _titleCtrl.text.trim(),
           description: _descCtrl.text.trim(),
           authorUid: user.uid,
-          authorName: (user.displayName != null && user.displayName!.trim().isNotEmpty) ? user.displayName!.trim() : 'Anonymous User',
+          authorName: authorName,
           authorRole: widget.userRole,
           createdAt: DateTime.now(),
           updatedAt: DateTime.now(),
@@ -655,6 +739,28 @@ class CreatePostModalState extends State<CreatePostModal> {
     }
   }
 
+  Widget _buildChoiceGroup(ThemeData theme, String label, List<String> options) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: theme.textTheme.labelMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: options
+              .map((o) => ChoiceChip(
+                    label: Text(o),
+                    selected: _uiPostType == o,
+                    showCheckmark: false,
+                    onSelected: (_) => setState(() => _uiPostType = o),
+                  ))
+              .toList(),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isAdmin = widget.userRole == 'admin';
@@ -662,141 +768,197 @@ class CreatePostModalState extends State<CreatePostModal> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
+    final isEvent = _typeMapping[_uiPostType]!['type'] == 'event';
+
+    const visibilityLabels = {
+      'public': 'Everyone',
+      'alumni_only': 'Alumni',
+      'students_only': 'Students',
+      'admins_only': 'Admins',
+    };
 
     return Container(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
-        top: AppSpacing.xl, left: AppSpacing.lg, right: AppSpacing.lg,
-      ),
+      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.92),
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       decoration: BoxDecoration(
         color: colorScheme.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(AppSpacing.md)),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
       ),
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(isEditing ? "Edit Post" : "Create Post", style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
-            AppSpacing.gapLg,
-            
-            DropdownButtonFormField<String>(
-              value: _uiPostType,
-              isExpanded: true,
-              decoration: const InputDecoration(labelText: 'Post Type', border: OutlineInputBorder()),
-              items: [
-                const DropdownMenuItem(value: 'Experience', child: Text('Experience')),
-                const DropdownMenuItem(value: 'Achievement', child: Text('Achievement')),
-                const DropdownMenuItem(value: 'Internship', child: Text('Internship')),
-                const DropdownMenuItem(value: 'Job Opportunity', child: Text('Job Opportunity')),
-                const DropdownMenuItem(value: 'Mentorship', child: Text('Mentorship')),
-                const DropdownMenuItem(value: 'Research', child: Text('Research')),
-                const DropdownMenuItem(value: 'Career Guidance', child: Text('Career Guidance')),
-                const DropdownMenuItem(value: 'Event', child: Text('Event')),
-                const DropdownMenuItem(value: 'Hackathon', child: Text('Hackathon')),
-                const DropdownMenuItem(value: 'Workshop', child: Text('Workshop')),
-                if (isAdmin) const DropdownMenuItem(value: 'News', child: Text('News')),
-                if (isAdmin) const DropdownMenuItem(value: 'Announcement', child: Text('Announcement')),
-              ],
-              onChanged: (val) => setState(() => _uiPostType = val!),
-            ),
-            AppSpacing.gapMd,
-
-            DropdownButtonFormField<String>(
-              value: _visibility,
-              isExpanded: true,
-              decoration: const InputDecoration(labelText: 'Visibility', border: OutlineInputBorder()),
-              items: const [
-                DropdownMenuItem(value: 'public', child: Text('Public', overflow: TextOverflow.ellipsis)),
-                DropdownMenuItem(value: 'alumni_only', child: Text('Alumni Only', overflow: TextOverflow.ellipsis)),
-                DropdownMenuItem(value: 'students_only', child: Text('Students Only', overflow: TextOverflow.ellipsis)),
-                DropdownMenuItem(value: 'admins_only', child: Text('Admins Only', overflow: TextOverflow.ellipsis)),
-              ],
-              onChanged: (val) => setState(() => _visibility = val!),
-            ),
-            AppSpacing.gapMd,
-
-            if (isAdmin && _typeMapping[_uiPostType]!['type'] == 'news') ...[
-               SwitchListTile(
-                 title: Text("Pin Post", style: textTheme.bodyLarge),
-                 value: _isPinned,
-                 activeTrackColor: colorScheme.primary.withValues(alpha: 0.5),
-                 activeColor: colorScheme.primary,
-                 onChanged: (val) => setState(() => _isPinned = val),
-               ),
-               AppSpacing.gapMd,
-            ],
-
-            TextField(
-              controller: _titleCtrl,
-              decoration: const InputDecoration(labelText: 'Title', border: OutlineInputBorder()),
-            ),
-            AppSpacing.gapMd,
-            TextField(
-              controller: _descCtrl,
-              maxLines: 4,
-              decoration: const InputDecoration(labelText: 'Description', border: OutlineInputBorder()),
-            ),
-            AppSpacing.gapMd,
-
-            if (_typeMapping[_uiPostType]!['type'] == 'event') ...[
-              Divider(color: theme.dividerColor),
-              AppSpacing.gapSm,
-              Text("Event Details", style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
-              AppSpacing.gapMd,
-              
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(_eventDate == null ? 'Select Date' : '${_eventDate!.month}/${_eventDate!.day}/${_eventDate!.year}', style: textTheme.bodyLarge),
-                trailing: Icon(Icons.calendar_today, color: colorScheme.primary),
-                onTap: _pickDate,
-              ),
-              AppSpacing.gapSm,
-              
-              TextField(
-                decoration: const InputDecoration(labelText: 'Location', border: OutlineInputBorder()),
-                onChanged: (val) => _eventLocation = val,
-                controller: TextEditingController(text: _eventLocation),
-              ),
-              AppSpacing.gapMd,
-              
-              TextField(
-                decoration: const InputDecoration(labelText: 'Max Attendees (Optional)', border: OutlineInputBorder()),
-                keyboardType: TextInputType.number,
-                onChanged: (val) => _maxAttendees = int.tryParse(val),
-                controller: TextEditingController(text: _maxAttendees?.toString() ?? ''),
-              ),
-
-              CheckboxListTile(
-                title: Text("Registration Required", style: textTheme.bodyLarge),
-                value: _registrationRequired,
-                activeColor: colorScheme.primary,
-                onChanged: (val) => setState(() => _registrationRequired = val!),
-              ),
-              if (_registrationRequired)
-                CheckboxListTile(
-                  title: Text("Enable Waitlist", style: textTheme.bodyLarge),
-                  value: _waitlistEnabled,
-                  activeColor: colorScheme.primary,
-                  onChanged: (val) => setState(() => _waitlistEnabled = val!),
+      child: SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: colorScheme.outline,
+                    borderRadius: BorderRadius.circular(100),
+                  ),
                 ),
-              AppSpacing.gapMd,
-            ],
-
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _isLoading ? null : _submit,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: colorScheme.primary,
-                  foregroundColor: colorScheme.onPrimary,
-                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
-                ),
-                child: _isLoading ? CircularProgressIndicator(color: colorScheme.onPrimary) : Text(isEditing ? "Save Changes" : "Publish", style: const TextStyle(fontWeight: FontWeight.bold)),
               ),
-            ),
-            AppSpacing.gapXl,
-          ],
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(isEditing ? "Edit post" : "Create a post", style: textTheme.headlineSmall),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close_rounded),
+                    tooltip: 'Close',
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              _buildChoiceGroup(theme, 'SHARE', const [
+                'Experience', 'Achievement', 'Internship', 'Job Opportunity',
+                'Mentorship', 'Research', 'Career Guidance',
+              ]),
+              const SizedBox(height: 14),
+              _buildChoiceGroup(theme, 'EVENT', const ['Event', 'Hackathon', 'Workshop']),
+              if (isAdmin) ...[
+                const SizedBox(height: 14),
+                _buildChoiceGroup(theme, 'ANNOUNCE', const ['News', 'Announcement']),
+              ],
+              const SizedBox(height: 20),
+
+              TextField(
+                controller: _titleCtrl,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(labelText: 'Title'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _descCtrl,
+                minLines: 4,
+                maxLines: 8,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(
+                  labelText: 'What would you like to share?',
+                  alignLabelWithHint: true,
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              Text('WHO CAN SEE THIS', style: textTheme.labelMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: visibilityLabels.entries
+                    .map((e) => ChoiceChip(
+                          avatar: Icon(
+                            e.key == 'public' ? Icons.public_rounded : Icons.group_outlined,
+                            size: 16,
+                            color: _visibility == e.key ? colorScheme.onPrimary : colorScheme.onSurfaceVariant,
+                          ),
+                          label: Text(e.value),
+                          selected: _visibility == e.key,
+                          showCheckmark: false,
+                          onSelected: (_) => setState(() => _visibility = e.key),
+                        ))
+                    .toList(),
+              ),
+
+              if (isAdmin && _typeMapping[_uiPostType]!['type'] == 'news') ...[
+                const SizedBox(height: 12),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  secondary: Icon(Icons.push_pin_outlined, color: AppColors.gold),
+                  title: const Text("Pin to top of feed"),
+                  value: _isPinned,
+                  onChanged: (val) => setState(() => _isPinned = val),
+                ),
+              ],
+
+              if (isEvent) ...[
+                const SizedBox(height: 20),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: colorScheme.outlineVariant),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text("Event details", style: textTheme.titleMedium),
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: _pickDate,
+                        style: OutlinedButton.styleFrom(
+                          alignment: Alignment.centerLeft,
+                          minimumSize: const Size.fromHeight(52),
+                          backgroundColor: colorScheme.surface,
+                        ),
+                        icon: Icon(Icons.calendar_month_outlined, color: colorScheme.primary),
+                        label: Text(
+                          _eventDate == null ? 'Pick a date' : DateFormat('EEEE, d MMMM yyyy').format(_eventDate!),
+                          style: textTheme.bodyLarge,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        initialValue: _eventLocation,
+                        decoration: const InputDecoration(
+                          labelText: 'Location',
+                          prefixIcon: Icon(Icons.place_outlined, size: 20),
+                        ),
+                        onChanged: (val) => _eventLocation = val,
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        initialValue: _maxAttendees?.toString() ?? '',
+                        decoration: const InputDecoration(
+                          labelText: 'Capacity (optional)',
+                          prefixIcon: Icon(Icons.groups_outlined, size: 20),
+                        ),
+                        keyboardType: TextInputType.number,
+                        onChanged: (val) => _maxAttendees = int.tryParse(val),
+                      ),
+                      const SizedBox(height: 4),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text("Registration required"),
+                        value: _registrationRequired,
+                        onChanged: (val) => setState(() => _registrationRequired = val),
+                      ),
+                      if (_registrationRequired)
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text("Waitlist when full"),
+                          value: _waitlistEnabled,
+                          onChanged: (val) => setState(() => _waitlistEnabled = val),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+
+              const SizedBox(height: 24),
+              SizedBox(
+                height: 54,
+                child: FilledButton(
+                  onPressed: _isLoading ? null : _submit,
+                  child: _isLoading
+                      ? SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(strokeWidth: 2.5, color: colorScheme.onPrimary),
+                        )
+                      : Text(isEditing ? "Save changes" : "Publish"),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

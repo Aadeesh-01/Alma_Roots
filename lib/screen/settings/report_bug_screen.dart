@@ -196,6 +196,7 @@ class _ReportBugScreenState extends State<ReportBugScreen> {
             AppSpacing.gapXs,
             DropdownButtonFormField<String>(
               value: _category,
+              isExpanded: true,
               decoration: _buildInputDecoration(theme, "Select category"),
               items: _categories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
               onChanged: (val) {

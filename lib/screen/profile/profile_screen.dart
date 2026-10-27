@@ -9,6 +9,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cs261_project/screen/message/chat_screen.dart';
+import 'package:cs261_project/theme/app_colors.dart';
+import 'package:cs261_project/widget/app_avatar.dart';
+import 'package:cs261_project/widget/app_section.dart';
 
 class ProfileScreen extends StatefulWidget {
   final String instituteId;
@@ -110,194 +114,240 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildProfileHeader(ThemeData theme) {
-    final name = _profile?.name ?? "Alumni";
-    final pictureUrl = _profile?.profileImage;
-    final isAlumni = _profile?.role == 'alumni';
-    final colorScheme = theme.colorScheme;
-    final textTheme = theme.textTheme;
+  bool get _isOwnProfile =>
+      widget.viewUid == null || widget.viewUid == FirebaseAuth.instance.currentUser?.uid;
 
-    return Container(
-      color: colorScheme.surface,
-      child: Column(
-        children: [
-          // Cover Photo Area
-          Container(
-            height: 120,
-            width: double.infinity,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  colorScheme.primary,
-                  colorScheme.primaryContainer,
+  Future<void> _openEdit() async {
+    if (_userDocumentId == null) return;
+    final updated = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ProfileEditScreen(
+          userDocumentId: _userDocumentId!,
+          instituteId: widget.instituteId,
+        ),
+      ),
+    );
+    if (updated == true && _userDocumentId != null && mounted) {
+      setState(() => _isLoading = true);
+      await _loadProfile(_userDocumentId!);
+    }
+  }
+
+  void _openChat() {
+    final p = _profile;
+    if (p == null) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChatScreen(
+          otherUserId: p.uid,
+          otherUserName: p.name,
+          instituteId: widget.instituteId,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProfileHeader(ThemeData theme) {
+    final p = _profile!;
+    final name = p.name.isNotEmpty ? p.name : p.email.split('@').first;
+    final pictureUrl = p.profileImage;
+    final hasPicture = pictureUrl != null && pictureUrl.trim().isNotEmpty;
+    final cs = theme.colorScheme;
+    final text = theme.textTheme;
+
+    final subtitle = p.role == 'alumni'
+        ? (p.company?.isNotEmpty == true ? p.company! : 'Alumni')
+        : (p.year?.isNotEmpty == true ? 'Class of ${p.year}' : (p.role == 'admin' ? 'Administrator' : 'Student'));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Container(
+              height: 132,
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: BoxDecoration(
+                gradient: AppColors.brandGradient,
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: Stack(
+                children: [
+                  Positioned(
+                    right: -30,
+                    top: -40,
+                    child: Container(
+                      width: 150,
+                      height: 150,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: AppColors.gold.withValues(alpha: 0.25), width: 1.5),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    right: 60,
+                    bottom: -50,
+                    child: Container(
+                      width: 110,
+                      height: 110,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white.withValues(alpha: 0.05),
+                      ),
+                    ),
+                  ),
                 ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
               ),
             ),
-          ),
-          // Avatar and Actions
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-            transform: Matrix4.translationValues(0.0, -40.0, 0.0),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                GestureDetector(
-                  onTap: pictureUrl != null ? () => _showImageDialog(pictureUrl) : null,
-                  child: Container(
-                    width: 100,
-                    height: 100,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: colorScheme.surface,
-                      border: Border.all(color: colorScheme.surface, width: 4),
-                    ),
-                    child: ClipOval(
-                      child: pictureUrl != null
-                          ? CachedNetworkImage(
-                              imageUrl: pictureUrl,
-                              fit: BoxFit.cover,
-                              placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
-                              errorWidget: (context, url, error) => Icon(Icons.person, color: colorScheme.onSurfaceVariant, size: 50),
-                            )
-                          : Center(
-                              child: Text(
-                                name.isNotEmpty ? name[0].toUpperCase() : 'A',
-                                style: TextStyle(fontSize: 36, color: colorScheme.primary, fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                    ),
-                  ),
+            Positioned(
+              left: 32,
+              bottom: -48,
+              child: GestureDetector(
+                onTap: hasPicture ? () => _showImageDialog(pictureUrl) : null,
+                child: AppAvatar(name: name, imageUrl: pictureUrl, radius: 48, ring: true),
+              ),
+            ),
+          ],
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 16, 0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              if (_isOwnProfile) ...[
+                FilledButton.tonalIcon(
+                  onPressed: _openEdit,
+                  style: FilledButton.styleFrom(minimumSize: const Size(0, 42)),
+                  icon: const Icon(Icons.edit_outlined, size: 18),
+                  label: const Text('Edit profile'),
                 ),
-                const Spacer(),
-                if (widget.viewUid == null || widget.viewUid == FirebaseAuth.instance.currentUser?.uid)
-                  Row(
-                    children: [
-                      OutlinedButton.icon(
-                        onPressed: () async {
-                          if (_userDocumentId == null) return;
-                          final updated = await Navigator.push<bool>(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => ProfileEditScreen(
-                                userDocumentId: _userDocumentId!,
-                                instituteId: widget.instituteId,
-                              ),
-                            ),
-                          );
-                          if (updated == true && _userDocumentId != null && mounted) {
-                            setState(() => _isLoading = true);
-                            await _loadProfile(_userDocumentId!);
-                          }
-                        },
-                        icon: const Icon(Icons.edit, size: 16),
-                        label: const Text("Edit Profile"),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: colorScheme.primary,
-                          side: BorderSide(color: colorScheme.primary),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSpacing.sm)),
-                        ),
-                      ),
-                      AppSpacing.gapSm,
-                      IconButton(
-                        icon: Icon(Icons.settings, color: colorScheme.onSurfaceVariant),
-                        onPressed: () {
-                          Navigator.push(context, MaterialPageRoute(builder: (_) => SettingsScreen(instituteId: widget.instituteId)));
-                        },
-                      ),
-                    ],
-                  )
-                else
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      // Navigate to messaging
-                    },
-                    icon: const Icon(Icons.message, size: 16),
-                    label: const Text("Message"),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: colorScheme.primary,
-                      foregroundColor: colorScheme.onPrimary,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSpacing.sm)),
+                const SizedBox(width: 8),
+                IconButton.outlined(
+                  tooltip: 'Settings',
+                  onPressed: () {
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => SettingsScreen(instituteId: widget.instituteId)));
+                  },
+                  icon: const Icon(Icons.settings_outlined, size: 20),
+                ),
+              ] else
+                FilledButton.icon(
+                  onPressed: _openChat,
+                  style: FilledButton.styleFrom(minimumSize: const Size(0, 42)),
+                  icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
+                  label: const Text('Message'),
+                ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 14, 24, 0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(name, style: text.headlineMedium),
+              const SizedBox(height: 4),
+              Text(subtitle, style: text.titleMedium?.copyWith(color: cs.onSurfaceVariant, fontWeight: FontWeight.w500)),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 10,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  RoleBadge(role: p.role),
+                  if (p.isMentor) _buildFlag(theme, Icons.volunteer_activism_outlined, 'Mentor'),
+                  if (p.isHiring) _buildFlag(theme, Icons.work_outline_rounded, 'Hiring'),
+                  if (p.email.isNotEmpty)
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.mail_outline_rounded, size: 15, color: cs.onSurfaceVariant),
+                        const SizedBox(width: 5),
+                        Text(p.email, style: text.bodySmall),
+                      ],
                     ),
-                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFlag(ThemeData theme, IconData icon, String label) {
+    final cs = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: cs.secondaryContainer,
+        borderRadius: BorderRadius.circular(100),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: cs.onSecondaryContainer),
+          const SizedBox(width: 4),
+          Text(label, style: theme.textTheme.labelSmall?.copyWith(color: cs.onSecondaryContainer)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionCard(ThemeData theme, {required String title, IconData? icon, required List<Widget> children}) {
+    final cs = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+      child: AppSurfaceCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                if (icon != null) ...[
+                  Icon(icon, size: 20, color: cs.primary),
+                  const SizedBox(width: 8),
+                ],
+                Text(title, style: theme.textTheme.titleMedium),
               ],
             ),
-          ),
-          // Info Section
+            const SizedBox(height: 14),
+            ...children,
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(ThemeData theme, IconData icon, String label, String? value) {
+    if (value == null || value.isEmpty) return const SizedBox.shrink();
+    final cs = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
           Container(
-            transform: Matrix4.translationValues(0.0, -20.0, 0.0),
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-            alignment: Alignment.centerLeft,
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: cs.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: cs.outlineVariant),
+            ),
+            child: Icon(icon, size: 18, color: cs.onSurfaceVariant),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(name, style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
-                AppSpacing.gapXs,
-                Text(
-                  isAlumni 
-                    ? (_profile?.company?.isNotEmpty == true ? _profile!.company! : "Alumni Professional")
-                    : (_profile?.year?.isNotEmpty == true ? "Class of ${_profile!.year}" : "Student"),
-                  style: textTheme.titleMedium?.copyWith(color: colorScheme.onSurfaceVariant),
-                ),
-                AppSpacing.gapSm,
-                Row(
-                  children: [
-                    Icon(Icons.email_outlined, size: 16, color: colorScheme.onSurfaceVariant),
-                    AppSpacing.gapXs,
-                    Text(_profile?.email ?? "No email provided", style: textTheme.bodyMedium),
-                  ],
-                ),
+                Text(label, style: theme.textTheme.bodySmall),
+                Text(value, style: theme.textTheme.titleSmall),
               ],
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSectionCard(ThemeData theme, {required String title, required List<Widget> children}) {
-    final colorScheme = theme.colorScheme;
-    final textTheme = theme.textTheme;
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: AppSpacing.sm, horizontal: AppSpacing.md),
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
-        border: Border.all(color: theme.dividerColor.withValues(alpha: 0.5)),
-        borderRadius: BorderRadius.circular(AppSpacing.md),
-        boxShadow: [
-          BoxShadow(
-            color: colorScheme.shadow.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
-          AppSpacing.gapMd,
-          ...children,
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInfoRow(ThemeData theme, String label, String? value) {
-    if (value == null || value.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(label, style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-          ),
-          Expanded(
-            child: Text(value, style: theme.textTheme.bodyLarge),
           ),
         ],
       ),
@@ -317,103 +367,129 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
+    final p = _profile!;
 
     return Scaffold(
-      backgroundColor: colorScheme.surface,
-      appBar: widget.isNested ? null : AppBar(
-        title: const Text("Profile"),
-        elevation: 0,
-        backgroundColor: colorScheme.primary,
-        foregroundColor: colorScheme.onPrimary,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () {
-              Navigator.push(context, MaterialPageRoute(builder: (_) => SettingsScreen(instituteId: widget.instituteId)));
-            },
-          ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildProfileHeader(theme),
-            
-            // Professional Details
-            if (_profile?.company?.isNotEmpty == true || _profile?.rollNo?.isNotEmpty == true || _profile?.year?.isNotEmpty == true)
-              _buildSectionCard(
-                theme,
-                title: "Professional Details",
-                children: [
-                  _buildInfoRow(theme, "Organization", _profile?.company),
-                  _buildInfoRow(theme, "Graduating Class", _profile?.year),
-                  _buildInfoRow(theme, "Roll Number", _profile?.rollNo),
-                ],
-              ),
+      appBar: widget.isNested ? null : AppBar(title: const Text("Profile")),
+      body: ListView(
+        padding: const EdgeInsets.only(top: 8, bottom: 32),
+        children: [
+          _buildProfileHeader(theme),
+          const SizedBox(height: 24),
 
-            // About Section
-            if (_profile?.bio?.isNotEmpty == true)
-              _buildSectionCard(
-                theme,
-                title: "About",
-                children: [
-                  Text(
-                    _profile!.bio!,
-                    style: textTheme.bodyLarge?.copyWith(height: 1.5),
-                  ),
-                ],
-              ),
+          if (p.company?.isNotEmpty == true || p.rollNo?.isNotEmpty == true || p.year?.isNotEmpty == true)
+            _buildSectionCard(
+              theme,
+              title: "Details",
+              icon: Icons.badge_outlined,
+              children: [
+                _buildInfoRow(theme, Icons.apartment_rounded, "Organization", p.company),
+                _buildInfoRow(theme, Icons.school_outlined, "Graduating class", p.year),
+                _buildInfoRow(theme, Icons.tag_rounded, "Roll number", p.rollNo),
+                _buildInfoRow(theme, Icons.account_tree_outlined, "Department", p.department),
+              ],
+            ),
 
-            // Skills & Interests
-            if (_profile?.interest?.isNotEmpty == true)
-              _buildSectionCard(
-                theme,
-                title: "Skills & Interests",
-                children: [
-                  Wrap(
-                    spacing: AppSpacing.sm,
-                    runSpacing: AppSpacing.sm,
-                    children: _profile!.interest!.split(',').map((skill) {
-                      final trimmed = skill.trim();
-                      if (trimmed.isEmpty) return const SizedBox.shrink();
-                      return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-                        decoration: BoxDecoration(
-                          color: colorScheme.primary.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(AppSpacing.sm),
-                        ),
-                        child: Text(
-                          trimmed,
-                          style: textTheme.bodySmall?.copyWith(color: colorScheme.primary, fontWeight: FontWeight.w600),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ],
-              ),
+          if (p.bio?.isNotEmpty == true)
+            _buildSectionCard(
+              theme,
+              title: "About",
+              icon: Icons.notes_rounded,
+              children: [
+                Text(p.bio!, style: textTheme.bodyLarge?.copyWith(height: 1.6)),
+              ],
+            ),
 
-            // QR Code
-            if (widget.viewUid != null && widget.viewUid != FirebaseAuth.instance.currentUser?.uid)
-              _buildSectionCard(
-                theme,
-                title: "Connect Instantly",
-                children: [
-                  Center(
+          if (p.interest?.isNotEmpty == true)
+            _buildSectionCard(
+              theme,
+              title: p.role == 'alumni' ? "Expertise" : "Skills & interests",
+              icon: Icons.auto_awesome_outlined,
+              children: [
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: p.interest!
+                      .split(',')
+                      .map((s) => s.trim())
+                      .where((s) => s.isNotEmpty)
+                      .map((skill) => Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                            decoration: BoxDecoration(
+                              color: colorScheme.primaryContainer,
+                              borderRadius: BorderRadius.circular(100),
+                            ),
+                            child: Text(
+                              skill,
+                              style: textTheme.labelMedium?.copyWith(color: colorScheme.onPrimaryContainer),
+                            ),
+                          ))
+                      .toList(),
+                ),
+              ],
+            ),
+
+          if (_isOwnProfile && p.bio?.isNotEmpty != true && p.interest?.isNotEmpty != true)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+              child: AppSurfaceCard(
+                onTap: _openEdit,
+                color: colorScheme.secondaryContainer.withValues(alpha: 0.5),
+                child: Row(
+                  children: [
+                    Icon(Icons.lightbulb_outline_rounded, color: colorScheme.onSecondaryContainer),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Add a bio and your skills so alumni can find you.',
+                        style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSecondaryContainer),
+                      ),
+                    ),
+                    Icon(Icons.chevron_right_rounded, color: colorScheme.onSecondaryContainer),
+                  ],
+                ),
+              ),
+            ),
+
+          if (p.email.isNotEmpty)
+            _buildSectionCard(
+              theme,
+              title: _isOwnProfile ? "Your QR code" : "Scan to connect",
+              icon: Icons.qr_code_2_rounded,
+              children: [
+                Center(
+                  child: Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: colorScheme.outlineVariant),
+                    ),
                     child: QrImageView(
-                      data: _profile?.email ?? '',
+                      data: p.email,
                       version: QrVersions.auto,
-                      size: 150,
-                      eyeStyle: QrEyeStyle(eyeShape: QrEyeShape.square, color: colorScheme.primary),
-                      dataModuleStyle: QrDataModuleStyle(dataModuleShape: QrDataModuleShape.square, color: colorScheme.primary),
+                      size: 160,
+                      eyeStyle: const QrEyeStyle(eyeShape: QrEyeShape.square, color: AppColors.forest),
+                      dataModuleStyle: const QrDataModuleStyle(
+                        dataModuleShape: QrDataModuleShape.square,
+                        color: AppColors.forest,
+                      ),
                     ),
                   ),
-                ],
-              ),
-
-            AppSpacing.gapXl,
-          ],
-        ),
+                ),
+                const SizedBox(height: 10),
+                Center(
+                  child: Text(
+                    _isOwnProfile
+                        ? 'Others can scan this from Network to find you.'
+                        : 'Scan from Network to open this profile.',
+                    style: textTheme.bodySmall,
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ],
+            ),
+        ],
       ),
     );
   }

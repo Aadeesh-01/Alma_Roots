@@ -1,4 +1,6 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cs261_project/theme/app_colors.dart';
+import 'package:cs261_project/widget/app_avatar.dart';
+import 'package:cs261_project/widget/app_section.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cs261_project/model/participant_model.dart';
 import 'package:cs261_project/screen/message/chat_screen.dart';
@@ -30,7 +32,7 @@ class _StartConversationScreenState extends State<StartConversationScreen> {
   String _selectedFilter = 'All';
 
   final List<String> _filters = [
-    'All', 'Students', 'Alumni', 'Admins', 'Mentors', 'Hiring', 'Networking'
+    'All', 'Students', 'Alumni', 'Admins'
   ];
 
   @override
@@ -106,107 +108,97 @@ class _StartConversationScreenState extends State<StartConversationScreen> {
     }).toList();
   }
 
+  String _displayName(ParticipantModel p) =>
+      p.name.isNotEmpty ? p.name : (p.email.isNotEmpty ? p.email.split('@').first : 'Member');
+
+  String _subtitle(ParticipantModel p) {
+    if (p.role == 'alumni') return p.company?.isNotEmpty == true ? p.company! : 'Alumni';
+    if (p.role == 'admin') return 'Administrator';
+    final parts = [
+      if (p.department?.isNotEmpty == true) p.department!,
+      if (p.year?.isNotEmpty == true) 'Class of ${p.year}',
+    ];
+    return parts.isEmpty ? 'Student' : parts.join(' · ');
+  }
+
   void _showProfilePreview(ParticipantModel p) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
+    final name = _displayName(p);
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
       builder: (context) {
-        return Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).padding.bottom + 24,
-            top: 24, left: 24, right: 24
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (p.profileImage != null)
-                CachedNetworkImage(
-                  imageUrl: p.profileImage!,
-                  imageBuilder: (context, imageProvider) => CircleAvatar(
-                    radius: 40,
-                    backgroundImage: imageProvider,
+        return SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AppAvatar(name: name, imageUrl: p.profileImage, radius: 40, ring: true),
+                const SizedBox(height: 14),
+                Text(name, style: textTheme.headlineSmall, textAlign: TextAlign.center),
+                const SizedBox(height: 8),
+                RoleBadge(role: p.role),
+                const SizedBox(height: 8),
+                Text(_subtitle(p), style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
+                if (p.bio != null && p.bio!.isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  Text(
+                    p.bio!,
+                    textAlign: TextAlign.center,
+                    maxLines: 4,
+                    overflow: TextOverflow.ellipsis,
+                    style: textTheme.bodyMedium,
                   ),
-                  placeholder: (context, url) => CircleAvatar(
-                    radius: 40,
-                    backgroundColor: theme.dividerColor,
-                    child: const SizedBox(
-                      width: 20, height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
+                ],
+                if (p.isMentor || p.isHiring || p.openToNetworking) ...[
+                  const SizedBox(height: 14),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.center,
+                    children: [
+                      if (p.isMentor) _buildBadge('Mentor', AppColors.forest),
+                      if (p.isHiring) _buildBadge('Hiring', AppColors.clay),
+                      if (p.openToNetworking) _buildBadge('Open to connect', AppColors.goldDeep),
+                    ],
                   ),
-                  errorWidget: (context, url, error) => CircleAvatar(
-                    radius: 40,
-                    backgroundColor: theme.dividerColor,
-                    child: Icon(Icons.error, color: colorScheme.onSurfaceVariant),
+                ],
+                const SizedBox(height: 22),
+                Divider(height: 1, color: colorScheme.outlineVariant),
+                const SizedBox(height: 18),
+                Text("How would you like to start?", style: textTheme.titleMedium),
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.center,
+                  children: [
+                    _introChip(p, 'Say hi 👋', null, Icons.waving_hand_outlined),
+                    _introChip(p, 'Request Mentorship', 'Request Mentorship', Icons.volunteer_activism_outlined),
+                    _introChip(p, 'Career Guidance', 'Career Guidance', Icons.explore_outlined),
+                    _introChip(p, 'Referral Request', 'Referral Request', Icons.badge_outlined),
+                    _introChip(p, 'Project Collaboration', 'Project Collaboration', Icons.code_rounded),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => ProfileScreen(instituteId: widget.instituteId, viewUid: p.uid),
+                      ));
+                    },
+                    child: const Text('View full profile'),
                   ),
                 )
-              else
-                CircleAvatar(
-                  radius: 40,
-                  backgroundColor: theme.dividerColor,
-                  child: Text(p.name.isNotEmpty ? p.name[0].toUpperCase() : '?', style: textTheme.headlineMedium?.copyWith(color: colorScheme.onSurface)),
-                ),
-              const SizedBox(height: 16),
-              Text(p.name, style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
-              Text(p.role.toUpperCase(), style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 16),
-              if (p.department != null || p.year != null)
-                Text('${p.department ?? ""} ${p.year ?? ""}'.trim(), style: textTheme.bodyLarge),
-              if (p.company != null)
-                Text('At: ${p.company}', style: textTheme.bodyLarge),
-              if (p.bio != null && p.bio!.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                Text(p.bio!, textAlign: TextAlign.center, style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
               ],
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                alignment: WrapAlignment.center,
-                children: [
-                  if (p.isMentor) _buildBadge('Mentor', colorScheme.primary),
-                  if (p.isHiring) _buildBadge('Hiring', colorScheme.tertiary),
-                  if (p.openToNetworking) _buildBadge('Open to Connect', colorScheme.secondary),
-                ],
-              ),
-              const SizedBox(height: 24),
-              const Divider(),
-              const SizedBox(height: 16),
-              Text("Start Conversation", style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                alignment: WrapAlignment.center,
-                children: [
-                  _introChip(p, 'Say Hi 👋', null, Icons.chat_bubble_outline),
-                  _introChip(p, 'Request Mentorship', 'Request Mentorship', Icons.school),
-                  _introChip(p, 'Career Guidance', 'Career Guidance', Icons.work),
-                  _introChip(p, 'Referral Request', 'Referral Request', Icons.badge),
-                  _introChip(p, 'Project Collaboration', 'Project Collaboration', Icons.code),
-                ],
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                child: TextButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => ProfileScreen(instituteId: widget.instituteId, viewUid: p.uid),
-                    ));
-                  },
-                  child: const Text('View Full Profile'),
-                ),
-              )
-            ],
+            ),
           ),
         );
       }
@@ -214,29 +206,27 @@ class _StartConversationScreenState extends State<StartConversationScreen> {
   }
 
   Widget _buildBadge(String label, Color color) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final fg = isDark ? Color.lerp(color, Colors.white, 0.45)! : color;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color),
+        color: color.withValues(alpha: isDark ? 0.22 : 0.10),
+        borderRadius: BorderRadius.circular(100),
       ),
-      child: Text(label, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold)),
+      child: Text(label, style: TextStyle(color: fg, fontSize: 12, fontWeight: FontWeight.w700)),
     );
   }
 
   Widget _introChip(ParticipantModel p, String label, String? introType, IconData icon) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    
+    final colorScheme = Theme.of(context).colorScheme;
+
     return ActionChip(
-      avatar: Icon(icon, size: 16, color: colorScheme.primary),
+      avatar: Icon(icon, size: 18, color: colorScheme.primary),
       label: Text(label),
-      backgroundColor: colorScheme.surface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: colorScheme.primary.withValues(alpha: 0.3))),
       onPressed: () {
         Navigator.pop(context); // Close bottom sheet
-        
+
         String? initialMessage;
         if (introType != null && _myProfile != null) {
           initialMessage = "👋 Hi! I'd like to connect regarding $introType.\n\n"
@@ -253,7 +243,7 @@ class _StartConversationScreenState extends State<StartConversationScreen> {
           MaterialPageRoute(
             builder: (_) => ChatScreen(
               otherUserId: p.uid,
-              otherUserName: p.name,
+              otherUserName: _displayName(p),
               instituteId: widget.instituteId,
               initialMessage: initialMessage,
             ),
@@ -270,76 +260,62 @@ class _StartConversationScreenState extends State<StartConversationScreen> {
     final textTheme = theme.textTheme;
 
     return Scaffold(
-      backgroundColor: colorScheme.surface,
-      appBar: AppBar(
-        title: Text('New Chat', style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
-        backgroundColor: colorScheme.surface,
-        elevation: 0,
-        iconTheme: IconThemeData(color: colorScheme.onSurface),
-      ),
+      appBar: AppBar(title: const Text('New conversation')),
       body: Column(
         children: [
-          Container(
-            color: colorScheme.surface,
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextField(
-                  controller: _searchController,
-                  onChanged: (val) {
-                    setState(() {
-                      _searchQuery = val;
-                      _updateDisplayParticipants();
-                    });
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+            child: TextField(
+              controller: _searchController,
+              autofocus: false,
+              onChanged: (val) {
+                setState(() {
+                  _searchQuery = val;
+                  _updateDisplayParticipants();
+                });
+              },
+              decoration: InputDecoration(
+                hintText: 'Search by name, department or year',
+                prefixIcon: const Icon(Icons.search_rounded),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(100),
+                  borderSide: BorderSide(color: colorScheme.outlineVariant),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(100),
+                  borderSide: BorderSide(color: colorScheme.outlineVariant),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(100),
+                  borderSide: BorderSide(color: colorScheme.primary, width: 1.6),
+                ),
+              ),
+            ),
+          ),
+          SizedBox(
+            height: 56,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              itemCount: _filters.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, i) {
+                final filter = _filters[i];
+                return ChoiceChip(
+                  label: Text(filter),
+                  selected: _selectedFilter == filter,
+                  showCheckmark: false,
+                  onSelected: (selected) {
+                    if (selected) {
+                      setState(() {
+                        _selectedFilter = filter;
+                        _updateDisplayParticipants();
+                      });
+                    }
                   },
-                  decoration: InputDecoration(
-                    hintText: 'Search by name, dept, or role...',
-                    prefixIcon: Icon(Icons.search, color: colorScheme.onSurfaceVariant),
-                    filled: true,
-                    fillColor: colorScheme.surfaceContainerHighest,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(30),
-                      borderSide: BorderSide.none,
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: _filters.map((filter) {
-                      final isSelected = _selectedFilter == filter;
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 8.0),
-                        child: ChoiceChip(
-                          label: Text(filter),
-                          selected: isSelected,
-                          onSelected: (selected) {
-                            if (selected) {
-                              setState(() {
-                                _selectedFilter = filter;
-                                _updateDisplayParticipants();
-                              });
-                            }
-                          },
-                          selectedColor: colorScheme.primary.withValues(alpha: 0.2),
-                          labelStyle: TextStyle(
-                            color: isSelected ? colorScheme.primary : colorScheme.onSurface,
-                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(20),
-                            side: BorderSide(color: isSelected ? colorScheme.primary : theme.dividerColor),
-                          ),
-                          backgroundColor: colorScheme.surface,
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ),
-              ],
+                );
+              },
             ),
           ),
           Expanded(
@@ -347,88 +323,63 @@ class _StartConversationScreenState extends State<StartConversationScreen> {
                 ? const Center(child: CircularProgressIndicator())
                 : _displayParticipants.isEmpty
                     ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.people_outline, size: 64, color: colorScheme.onSurfaceVariant),
-                            const SizedBox(height: 16),
-                            Text(
-                              _searchQuery.isNotEmpty || _selectedFilter != 'All'
-                                  ? "No participants found matching your criteria"
-                                  : "No participants available to chat",
-                              style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 16),
-                              textAlign: TextAlign.center,
-                            ),
-                          ],
+                        child: Padding(
+                          padding: const EdgeInsets.all(32),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 72,
+                                height: 72,
+                                decoration: BoxDecoration(color: colorScheme.secondaryContainer, shape: BoxShape.circle),
+                                child: Icon(Icons.person_search_outlined, size: 32, color: colorScheme.onSecondaryContainer),
+                              ),
+                              const SizedBox(height: 14),
+                              Text(
+                                _searchQuery.isNotEmpty || _selectedFilter != 'All'
+                                    ? "No one matches that"
+                                    : "No one to chat with yet",
+                                style: textTheme.titleMedium,
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
                         ),
                       )
-                    : ListView.builder(
+                    : ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
                         itemCount: _displayParticipants.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
                         itemBuilder: (context, index) {
                           final p = _displayParticipants[index];
-                          return Card(
-                            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                            color: colorScheme.surface,
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: theme.dividerColor)),
-                            child: ListTile(
-                              contentPadding: const EdgeInsets.all(12),
-                              leading: p.profileImage != null
-                                  ? CachedNetworkImage(
-                                      imageUrl: p.profileImage!,
-                                      imageBuilder: (context, imageProvider) => CircleAvatar(
-                                        radius: 25,
-                                        backgroundImage: imageProvider,
+                          final name = _displayName(p);
+                          return AppSurfaceCard(
+                            padding: const EdgeInsets.all(12),
+                            onTap: () => _showProfilePreview(p),
+                            child: Row(
+                              children: [
+                                AppAvatar(name: name, imageUrl: p.profileImage, radius: 24),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Flexible(
+                                            child: Text(name, style: textTheme.titleSmall, maxLines: 1, overflow: TextOverflow.ellipsis),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          RoleBadge(role: p.role, dense: true),
+                                        ],
                                       ),
-                                      placeholder: (context, url) => CircleAvatar(
-                                        radius: 25,
-                                        backgroundColor: theme.dividerColor,
-                                        child: const SizedBox(
-                                          width: 16, height: 16,
-                                          child: CircularProgressIndicator(strokeWidth: 2),
-                                        ),
-                                      ),
-                                      errorWidget: (context, url, error) => CircleAvatar(
-                                        radius: 25,
-                                        backgroundColor: theme.dividerColor,
-                                        child: Icon(Icons.error, color: colorScheme.onSurfaceVariant, size: 20),
-                                      ),
-                                    )
-                                  : CircleAvatar(
-                                      radius: 25,
-                                      backgroundColor: colorScheme.surfaceContainerHighest,
-                                      child: Text(
-                                        p.name.isNotEmpty ? p.name[0].toUpperCase() : '?',
-                                        style: TextStyle(fontSize: 18, color: colorScheme.onSurface),
-                                      ),
-                                    ),
-                              title: Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      p.name,
-                                      style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
+                                      const SizedBox(height: 3),
+                                      Text(_subtitle(p), style: textTheme.bodySmall, maxLines: 1, overflow: TextOverflow.ellipsis),
+                                    ],
                                   ),
-                                  if (p.isMentor) Icon(Icons.school, size: 14, color: colorScheme.primary),
-                                  if (p.isHiring) ...[const SizedBox(width: 4), Icon(Icons.work, size: 14, color: colorScheme.tertiary)],
-                                ],
-                              ),
-                              subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    p.role.toUpperCase(),
-                                    style: TextStyle(color: colorScheme.primary, fontSize: 12, fontWeight: FontWeight.w600),
-                                  ),
-                                  if (p.department != null)
-                                    Text('${p.department} ${p.year ?? ""}', style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 12)),
-                                ],
-                              ),
-                              onTap: () => _showProfilePreview(p),
+                                ),
+                                Icon(Icons.chat_bubble_outline_rounded, size: 20, color: colorScheme.primary),
+                              ],
                             ),
                           );
                         },

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:cs261_project/theme/app_colors.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -207,308 +209,312 @@ class _AuthScreenState extends State<AuthScreen>
     AppSnackBar.showError(context, message);
   }
 
-  Widget _buildFeatureChips(bool isDark) {
-    final features = [
-      "💬 Messaging",
-      "🎓 Alumni Network",
-      "📅 Events",
-      "📰 News",
-      "🔍 Search",
-    ];
+  InputDecoration _fieldDecoration(String label, IconData icon, {Widget? suffix}) {
+    return InputDecoration(
+      labelText: label,
+      prefixIcon: Icon(icon, size: 20),
+      suffixIcon: suffix,
+    );
+  }
 
-    final Color chipBg = isDark ? const Color(0xFF1E293B) : Colors.white;
-    final Color chipBorder = isDark ? const Color(0xFF334155) : const Color(0xFFDDE7F2);
-    final Color chipText = isDark ? const Color(0xFFCBD5E1) : const Color(0xFF1565C0);
+  Widget _buildHero(ThemeData theme) {
+    final topInset = MediaQuery.of(context).padding.top;
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.fromLTRB(24, topInset + 36, 24, 96),
+      decoration: const BoxDecoration(
+        gradient: AppColors.brandGradient,
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(36)),
+      ),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // Soft decorative rings echoing the tree canopy
+          Positioned(
+            right: -70,
+            top: -60,
+            child: Container(
+              width: 200,
+              height: 200,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: AppColors.gold.withValues(alpha: 0.18), width: 1.5),
+              ),
+            ),
+          ),
+          Positioned(
+            left: -90,
+            bottom: -110,
+            child: Container(
+              width: 220,
+              height: 220,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.04),
+              ),
+            ),
+          ),
+          FadeTransition(
+            opacity: _fadeAnimation,
+            child: Column(
+              children: [
+                Container(
+                  width: 84,
+                  height: 84,
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppColors.gold, width: 1.5),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.25),
+                        blurRadius: 24,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
+                  ),
+                  child: ClipOval(
+                    child: Image.asset('assets/images/logo.png', fit: BoxFit.cover),
+                  ),
+                ),
+                AppSpacing.gapMd,
+                Text(
+                  'Alma Roots',
+                  style: theme.textTheme.displaySmall?.copyWith(
+                    color: Colors.white,
+                    fontSize: 38,
+                  ),
+                ),
+                AppSpacing.gapXs,
+                Text(
+                  'Reconnect. Network. Grow together.',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    color: Colors.white.withValues(alpha: 0.78),
+                  ),
+                ),
+                AppSpacing.gapMd,
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: const ['Mentorship', 'Events', 'Alumni', 'Messaging']
+                      .map((f) => Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(100),
+                              border: Border.all(color: AppColors.gold.withValues(alpha: 0.35)),
+                            ),
+                            child: Text(
+                              f,
+                              style: const TextStyle(
+                                color: Color(0xFFF4E3B5),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ))
+                      .toList(),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      alignment: WrapAlignment.center,
-      children: features
-          .map((f) => Chip(
-                label: Text(f,
-                    style: TextStyle(
-                        fontSize: 12, fontWeight: FontWeight.w500, color: chipText)),
-                backgroundColor: chipBg,
-                side: BorderSide(color: chipBorder),
-              ))
-          .toList(),
+  Widget _buildDemoButton(IconData icon, String label, VoidCallback onTap) {
+    return Expanded(
+      child: OutlinedButton(
+        onPressed: onTap,
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size(0, 46),
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16),
+            const SizedBox(width: 6),
+            Flexible(child: Text(label, overflow: TextOverflow.ellipsis)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFormCard(ThemeData theme) {
+    final cs = theme.colorScheme;
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 460),
+      padding: const EdgeInsets.fromLTRB(22, 26, 22, 22),
+      decoration: BoxDecoration(
+        color: cs.surface,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: cs.outlineVariant),
+        boxShadow: [
+          BoxShadow(
+            color: cs.shadow.withValues(alpha: theme.brightness == Brightness.dark ? 0.4 : 0.08),
+            blurRadius: 32,
+            offset: const Offset(0, 16),
+          ),
+        ],
+      ),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('Welcome back', style: theme.textTheme.headlineSmall),
+            AppSpacing.gapXs,
+            Text(
+              'Sign in to your institute network',
+              style: theme.textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+            ),
+            AppSpacing.gapLg,
+            DropdownButtonFormField<String>(
+              value: _selectedInstituteId,
+              isExpanded: true,
+              borderRadius: BorderRadius.circular(14),
+              dropdownColor: cs.surface,
+              items: _institutes
+                  .map((inst) => DropdownMenuItem<String>(
+                        value: inst['id'],
+                        child: Text(inst['name']),
+                      ))
+                  .toList(),
+              onChanged: (v) => setState(() => _selectedInstituteId = v),
+              decoration: _fieldDecoration('Institute', Icons.account_balance_outlined),
+              validator: (v) => v == null ? 'Please select an institute' : null,
+            ),
+            AppSpacing.gapMd,
+            TextFormField(
+              controller: _emailCtrl,
+              keyboardType: TextInputType.emailAddress,
+              autofillHints: const [AutofillHints.email],
+              textInputAction: TextInputAction.next,
+              decoration: _fieldDecoration('Email', Icons.mail_outline_rounded),
+              validator: (v) => v!.isEmpty ? 'Please enter your email' : null,
+            ),
+            AppSpacing.gapMd,
+            TextFormField(
+              controller: _passwordCtrl,
+              obscureText: _obscurePassword,
+              autofillHints: const [AutofillHints.password],
+              textInputAction: TextInputAction.done,
+              onFieldSubmitted: (_) {
+                if (!_isLoading) _loginUser();
+              },
+              decoration: _fieldDecoration(
+                'Password',
+                Icons.lock_outline_rounded,
+                suffix: IconButton(
+                  icon: Icon(
+                    _obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                    size: 20,
+                  ),
+                  onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                ),
+              ),
+              validator: (v) => v!.isEmpty ? 'Please enter your password' : null,
+            ),
+            AppSpacing.gapLg,
+            SizedBox(
+              height: 54,
+              child: _isLoading
+                  ? const AppLoadingView()
+                  : FilledButton(
+                      onPressed: _loginUser,
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text('Sign in'),
+                          SizedBox(width: 8),
+                          Icon(Icons.arrow_forward_rounded, size: 18),
+                        ],
+                      ),
+                    ),
+            ),
+            AppSpacing.gapLg,
+            Row(
+              children: [
+                Expanded(child: Divider(color: cs.outlineVariant, height: 1)),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Text(
+                    'DEMO ACCESS',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: cs.onSurfaceVariant,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                ),
+                Expanded(child: Divider(color: cs.outlineVariant, height: 1)),
+              ],
+            ),
+            AppSpacing.gapMd,
+            Row(
+              children: [
+                _buildDemoButton(Icons.school_outlined, 'Student',
+                    () => _fillDemo('demo.student@demo.edu', 'Demo@123')),
+                const SizedBox(width: 8),
+                _buildDemoButton(Icons.workspace_premium_outlined, 'Alumni',
+                    () => _fillDemo('demo.alumni@demo.edu', 'Demo@123')),
+                const SizedBox(width: 8),
+                _buildDemoButton(Icons.admin_panel_settings_outlined, 'Admin',
+                    () => _fillDemo('adminabc@email.com', '123456')),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final bool isDark = Theme.of(context).brightness == Brightness.dark;
-    final textTheme = Theme.of(context).textTheme;
-
-    // Colors
-    final Color bgColor = isDark ? const Color(0xFF0F172A) : const Color(0xFFEAF4FF);
-    final Color cardColor = isDark ? const Color(0xFF1E293B) : Colors.white;
-    final Color inputFillColor = isDark ? const Color(0xFF334155) : Colors.white;
-    final Color inputBorderColor = isDark ? Colors.transparent : const Color(0xFFDDE7F2);
-    final Color primaryColor = isDark ? const Color(0xFF2563EB) : const Color(0xFF1565C0);
-    final Color textColor = isDark ? Colors.white : Colors.black87;
-    final Color secondaryTextColor = isDark ? const Color(0xFFCBD5E1) : Colors.grey.shade700;
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
 
     return Scaffold(
-      backgroundColor: bgColor,
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                FadeTransition(
-                  opacity: _fadeAnimation,
-                  child: Column(
-                    children: [
-                      // Logo
-                      Container(
-                        width: 80,
-                        height: 80,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: primaryColor.withValues(alpha: 0.2),
-                              blurRadius: 20,
-                              offset: const Offset(0, 10),
-                            ),
-                          ],
-                        ),
-                        child: ClipOval(
-                          child: Image.asset(
-                            'assets/images/logo.png',
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                      ),
-                      AppSpacing.gapMd,
-                      Text(
-                        'Alma Roots',
-                        style: textTheme.displaySmall?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          color: primaryColor,
-                          letterSpacing: -0.5,
-                        ),
-                      ),
-                      AppSpacing.gapXs,
-                      Text(
-                        'Reconnect. Network. Grow Together.',
-                        style: textTheme.titleMedium?.copyWith(
-                          color: secondaryTextColor,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      AppSpacing.gapMd,
-                      _buildFeatureChips(isDark),
-                      AppSpacing.gapLg,
-                    ],
-                  ),
-                ),
-                SlideTransition(
-                  position: _slideAnimation,
-                  child: FadeTransition(
-                    opacity: _fadeAnimation,
-                    child: Container(
-                      constraints: const BoxConstraints(maxWidth: 450),
-                      decoration: BoxDecoration(
-                        color: cardColor,
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.05),
-                            blurRadius: 30,
-                            offset: const Offset(0, 10),
-                          ),
-                        ],
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(32),
-                        child: Form(
-                          key: _formKey,
-                          child: Column(
-                            children: [
-                              DropdownButtonFormField<String>(
-                                value: _selectedInstituteId,
-                                isExpanded: true,
-                                dropdownColor: cardColor,
-                                items: _institutes
-                                    .map((inst) => DropdownMenuItem<String>(
-                                          value: inst['id'],
-                                          child: Text(inst['name'], style: TextStyle(color: textColor)),
-                                        ))
-                                    .toList(),
-                                onChanged: (v) =>
-                                    setState(() => _selectedInstituteId = v),
-                                decoration: InputDecoration(
-                                  labelText: 'Select Institute',
-                                  labelStyle: TextStyle(color: secondaryTextColor),
-                                  filled: true,
-                                  fillColor: inputFillColor,
-                                  border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: BorderSide(color: inputBorderColor)),
-                                  enabledBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: BorderSide(color: inputBorderColor)),
-                                  prefixIcon:
-                                      Icon(Icons.account_balance, color: secondaryTextColor),
-                                ),
-                                validator: (v) => v == null
-                                    ? 'Please select an institute'
-                                    : null,
-                              ),
-                              AppSpacing.gapLg,
-                              TextFormField(
-                                controller: _emailCtrl,
-                                style: TextStyle(color: textColor),
-                                decoration: InputDecoration(
-                                  labelText: 'Email',
-                                  labelStyle: TextStyle(color: secondaryTextColor),
-                                  filled: true,
-                                  fillColor: inputFillColor,
-                                  prefixIcon:
-                                      Icon(Icons.email_outlined, color: secondaryTextColor),
-                                  border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: BorderSide(color: inputBorderColor)),
-                                  enabledBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: BorderSide(color: inputBorderColor)),
-                                ),
-                                keyboardType: TextInputType.emailAddress,
-                                validator: (v) => v!.isEmpty
-                                    ? 'Please enter your email'
-                                    : null,
-                              ),
-                              AppSpacing.gapLg,
-                              TextFormField(
-                                controller: _passwordCtrl,
-                                style: TextStyle(color: textColor),
-                                decoration: InputDecoration(
-                                  labelText: 'Password',
-                                  labelStyle: TextStyle(color: secondaryTextColor),
-                                  filled: true,
-                                  fillColor: inputFillColor,
-                                  prefixIcon: Icon(Icons.lock_outline, color: secondaryTextColor),
-                                  suffixIcon: IconButton(
-                                    icon: Icon(_obscurePassword
-                                        ? Icons.visibility_off
-                                        : Icons.visibility, color: secondaryTextColor),
-                                    onPressed: () => setState(() =>
-                                        _obscurePassword = !_obscurePassword),
-                                  ),
-                                  border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: BorderSide(color: inputBorderColor)),
-                                  enabledBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: BorderSide(color: inputBorderColor)),
-                                ),
-                                obscureText: _obscurePassword,
-                                validator: (v) => v!.isEmpty
-                                    ? 'Please enter your password'
-                                    : null,
-                              ),
-                              AppSpacing.gapXl,
-                              _isLoading
-                                  ? const AppLoadingView()
-                                  : ElevatedButton(
-                                      onPressed: _loginUser,
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: primaryColor,
-                                        foregroundColor: Colors.white,
-                                        minimumSize:
-                                            const Size(double.infinity, 54),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(12),
-                                        ),
-                                        elevation: 2,
-                                      ),
-                                      child: const Text('Login',
-                                          style: TextStyle(
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.bold)),
-                                    ),
-                              AppSpacing.gapXl,
-                              Row(
-                                children: [
-                                  Expanded(child: Divider(color: inputBorderColor == Colors.transparent ? secondaryTextColor.withValues(alpha: 0.3) : inputBorderColor)),
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                                    child: Text(
-                                      "OR",
-                                      style: TextStyle(
-                                        color: secondaryTextColor,
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ),
-                                  Expanded(child: Divider(color: inputBorderColor == Colors.transparent ? secondaryTextColor.withValues(alpha: 0.3) : inputBorderColor)),
-                                ],
-                              ),
-                              AppSpacing.gapLg,
-                              Text("Demo Access",
-                                  style: textTheme.titleSmall?.copyWith(
-                                      color: secondaryTextColor,
-                                      fontWeight: FontWeight.w600)),
-                              AppSpacing.gapMd,
-                              Wrap(
-                                spacing: 12,
-                                runSpacing: 12,
-                                alignment: WrapAlignment.center,
-                                children: [
-                                  OutlinedButton.icon(
-                                    icon: const Icon(Icons.school, size: 16),
-                                    label: const Text("Student"),
-                                    onPressed: () => _fillDemo(
-                                        'demo.student@demo.edu', 'Demo@123'),
-                                    style: OutlinedButton.styleFrom(
-                                        foregroundColor: primaryColor,
-                                        side: BorderSide(color: primaryColor.withValues(alpha: 0.5))),
-                                  ),
-                                  OutlinedButton.icon(
-                                    icon: const Icon(Icons.work, size: 16),
-                                    label: const Text("Alumni"),
-                                    onPressed: () =>
-                                        _fillDemo('demo.alumni@demo.edu', 'Demo@123'),
-                                    style: OutlinedButton.styleFrom(
-                                        foregroundColor: primaryColor,
-                                        side: BorderSide(color: primaryColor.withValues(alpha: 0.5))),
-                                  ),
-                                  OutlinedButton.icon(
-                                    icon: const Icon(Icons.admin_panel_settings,
-                                        size: 16),
-                                    label: const Text("Admin"),
-                                    onPressed: () =>
-                                        _fillDemo('adminabc@email.com', '123456'),
-                                    style: OutlinedButton.styleFrom(
-                                        foregroundColor: primaryColor,
-                                        side: BorderSide(color: primaryColor.withValues(alpha: 0.5))),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
+      body: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: SystemUiOverlayStyle.light,
+        child: SingleChildScrollView(
+          child: Column(
+            children: [
+              _buildHero(theme),
+              Transform.translate(
+                offset: const Offset(0, -64),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: SlideTransition(
+                    position: _slideAnimation,
+                    child: FadeTransition(
+                      opacity: _fadeAnimation,
+                      child: Center(child: _buildFormCard(theme)),
                     ),
                   ),
                 ),
-                const SizedBox(height: 32),
-                FadeTransition(
-                  opacity: _fadeAnimation,
-                  child: Text("Alma Roots v1.0.0",
-                      style: textTheme.bodySmall
-                          ?.copyWith(color: secondaryTextColor)),
+              ),
+              Transform.translate(
+                offset: const Offset(0, -40),
+                child: Column(
+                  children: [
+                    Text(
+                      'Accounts are created by your institute admin.',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                    AppSpacing.gapXs,
+                    Text(
+                      'Alma Roots v1.0.0',
+                      style: theme.textTheme.labelSmall?.copyWith(color: cs.onSurfaceVariant),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),

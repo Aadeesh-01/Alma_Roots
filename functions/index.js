@@ -196,13 +196,40 @@ exports.addAdminRole = onCall(
   }
 );
 
-async function processDeletion(doc, db, now, targetUidOverride = null) {
+// mode: "manual-target" (Process Now on one user), "manual-queue" (Process Queue),
+// or "auto" (scheduled job).
+async function processDeletion(doc, db, now, mode = "manual-queue") {
   const data = doc.data();
-  const { uid, email, instituteId, requestedBy } = data;
+  const { email, requestedBy } = data;
+  // Older entries may lack these fields; fall back to the document's own path.
+  const uid = data.uid || doc.ref.id;
+  const instituteId = data.instituteId || doc.ref.parent.parent.id;
 
   const batch = db.batch();
 
   try {
+    const instituteRef = db.collection("institutes").doc(instituteId);
+    const participantRef = instituteRef.collection("participants").doc(uid);
+
+    let pData = null;
+    const participantSnap = await participantRef.get();
+
+    // Restoring or reactivating a user does not cancel their queue entry, so the
+    // scheduled job must never delete someone who is active again.
+    if (mode === "auto" && participantSnap.exists) {
+      const p = participantSnap.data();
+      if (p.isDeleted !== true && p.status !== "deleted") {
+        await doc.ref.update({
+          status: "cancelled",
+          cancelledAt: now,
+          cancelledBy: "system",
+          notes: "Skipped by scheduled job: user is active again",
+        });
+        logger.info(`Skipped permanent deletion for active user ${uid}`);
+        return "skipped";
+      }
+    }
+
     // 1. Delete Firebase Auth Account
     try {
       await admin.auth().deleteUser(uid);
@@ -213,11 +240,6 @@ async function processDeletion(doc, db, now, targetUidOverride = null) {
       }
     }
 
-    const instituteRef = db.collection("institutes").doc(instituteId);
-    const participantRef = instituteRef.collection("participants").doc(uid);
-    
-    let pData = null;
-    const participantSnap = await participantRef.get();
     if (participantSnap.exists) {
       pData = participantSnap.data();
       // 2. Archive User Metadata
@@ -228,6 +250,7 @@ async function processDeletion(doc, db, now, targetUidOverride = null) {
     batch.set(participantRef, {
       uid,
       status: "permanently_deleted",
+      isDeleted: true, // so client-side "deleted user" filters hide tombstones
       name: "Deleted User",
       deletedAt: pData?.deletedAt || now,
       permanentDeletionAt: now,
@@ -254,11 +277,17 @@ async function processDeletion(doc, db, now, targetUidOverride = null) {
     });
 
     // 7. Audit Log
+    const actions = {
+      "manual-target": "MANUAL_USER_DELETION",
+      "manual-queue": "MANUAL_QUEUE_PROCESSING",
+      "auto": "AUTO_QUEUE_PROCESSING",
+    };
     batch.set(instituteRef.collection("admin_actions").doc(), {
-      action: targetUidOverride ? "MANUAL_USER_DELETION" : "MANUAL_QUEUE_PROCESSING",
+      action: actions[mode] || "MANUAL_QUEUE_PROCESSING",
       targetUid: uid,
-      targetEmail: email,
-      adminUid: requestedBy || "system",
+      targetEmail: email || null,
+      adminUid: mode === "auto" ? "system" : (requestedBy || "system"),
+      scheduledBy: data.requestedBy || null,
       timestamp: now,
     });
 
@@ -323,8 +352,8 @@ exports.processDeletionQueueNow = onCall(
           ref: doc.ref
         };
 
-        const success = await processDeletion(docWrapper, db, now, targetUid);
-        if (success) {
+        const success = await processDeletion(docWrapper, db, now, targetUid ? "manual-target" : "manual-queue");
+        if (success === true) {
           processed++;
           deletedUsers.push(currentData.email || currentData.uid);
         } else {
@@ -341,25 +370,34 @@ exports.processDeletionQueueNow = onCall(
   }
 );
 
-// ========================== PROCESS PERMANENT DELETIONS (DEPRECATED) ==========================
-// Kept for rollback capability until manual flow is fully verified.
-exports.processPermanentDeletionQueue = onSchedule("every 5 minutes", async (event) => {
-  const db = admin.firestore();
-  const now = admin.firestore.Timestamp.now();
+// ========================== SCHEDULED: AUTO-PROCESS DUE DELETIONS ==========================
+// Runs every 5 minutes and permanently deletes users whose 24h grace period has passed.
+exports.processPermanentDeletionQueue = onSchedule(
+  { schedule: "every 5 minutes", region: "asia-south1", timeZone: "Asia/Kolkata" },
+  async () => {
+    const db = admin.firestore();
+    const now = admin.firestore.Timestamp.now();
 
-  const snapshot = await db.collectionGroup("deletion_queue")
-    .where("status", "==", "pending")
-    .where("scheduledFor", "<=", now)
-    .get();
+    const snapshot = await db.collectionGroup("deletion_queue")
+      .where("status", "==", "pending")
+      .where("scheduledFor", "<=", now)
+      .get();
 
-  if (snapshot.empty) {
-    logger.info("No pending deletions to process.");
-    return;
+    if (snapshot.empty) {
+      logger.info("No pending deletions to process.");
+      return;
+    }
+
+    let processed = 0;
+    let skipped = 0;
+    let failed = 0;
+    for (const doc of snapshot.docs) {
+      const result = await processDeletion(doc, db, now, "auto");
+      if (result === true) processed++;
+      else if (result === "skipped") skipped++;
+      else failed++;
+    }
+
+    logger.info(`Scheduled deletion run: ${processed} deleted, ${skipped} skipped (user active), ${failed} failed.`);
   }
-
-  for (const doc of snapshot.docs) {
-    await processDeletion(doc, db, now);
-  }
-
-  logger.info(`Successfully processed ${snapshot.size} permanent deletions.`);
-});
+);

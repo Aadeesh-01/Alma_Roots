@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:cs261_project/theme/app_colors.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -35,7 +37,7 @@ class _SplashScreenState extends State<SplashScreen>
       curve: Curves.easeInOut,
     ));
     _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.3),
+      begin: const Offset(0, 0.15),
       end: Offset.zero,
     ).animate(CurvedAnimation(
       parent: _slideController,
@@ -46,8 +48,7 @@ class _SplashScreenState extends State<SplashScreen>
     _fadeController.forward();
     _slideController.forward();
 
-    // The navigation logic is now handled by main.dart's StreamBuilder
-    // so we REMOVED the _navigateToNext() call from here.
+    // Navigation is handled by main.dart's StreamBuilder.
   }
 
   @override
@@ -57,113 +58,92 @@ class _SplashScreenState extends State<SplashScreen>
     super.dispose();
   }
 
-  // The _navigateToNext() method has been completely removed.
-
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-
+    // Shown before the app theme is available, so styles are set explicitly.
     return Scaffold(
-      backgroundColor: colorScheme.surface,
+      backgroundColor: AppColors.forestDeep,
       body: Container(
         width: double.infinity,
         height: double.infinity,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              colorScheme.primary.withValues(alpha: 0.05),
-              colorScheme.surface,
-              colorScheme.primary.withValues(alpha: 0.05),
-            ],
-            stops: const [0.0, 0.5, 1.0],
-          ),
-        ),
+        decoration: const BoxDecoration(gradient: AppColors.brandGradient),
         child: SafeArea(
           child: Column(
             children: [
-              const Spacer(flex: 2),
-              Expanded(
-                flex: 3,
-                child: FadeTransition(
-                  opacity: _fadeAnimation,
-                  child: SlideTransition(
-                    position: _slideAnimation,
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        // App Logo/Icon
-                        Container(
-                          width: 100,
-                          height: 100,
-                          decoration: BoxDecoration(
-                            color: colorScheme.primary,
-                            borderRadius: BorderRadius.circular(20),
-                            boxShadow: [
-                              BoxShadow(
-                                color: colorScheme.primary.withValues(alpha: 0.3),
-                                blurRadius: 20,
-                                offset: const Offset(0, 10),
-                              ),
-                            ],
-                          ),
-                          child: Icon(
-                            Icons.school_rounded,
-                            size: 50,
-                            color: colorScheme.onPrimary,
-                          ),
-                        ),
-                        const SizedBox(height: 32),
-                        // App Name
-                        Text(
-                          'Alma Roots',
-                          style: textTheme.displaySmall?.copyWith(
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: -0.5,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        // Tagline
-                        Text(
-                          'Connect • Network • Grow',
-                          style: textTheme.bodyLarge?.copyWith(
-                            letterSpacing: 1.5,
-                          ),
-                        ),
-                        const SizedBox(height: 48),
-                        // Loading indicator
-                        SizedBox(
-                          width: 32,
-                          height: 32,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 3,
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              colorScheme.primary,
+              const Spacer(flex: 3),
+              FadeTransition(
+                opacity: _fadeAnimation,
+                child: SlideTransition(
+                  position: _slideAnimation,
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 112,
+                        height: 112,
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: AppColors.gold, width: 1.5),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.3),
+                              blurRadius: 30,
+                              offset: const Offset(0, 12),
                             ),
-                          ),
+                          ],
                         ),
-                      ],
-                    ),
+                        child: ClipOval(
+                          child: Image.asset('assets/images/logo.png', fit: BoxFit.cover),
+                        ),
+                      ),
+                      const SizedBox(height: 28),
+                      Text(
+                        'Alma Roots',
+                        style: GoogleFonts.fraunces(
+                          fontSize: 40,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: -0.8,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'CONNECT  ·  NETWORK  ·  GROW',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 2.4,
+                          color: AppColors.gold,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-              Expanded(
-                flex: 1,
+              const Spacer(flex: 2),
+              FadeTransition(
+                opacity: _fadeAnimation,
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    FadeTransition(
-                      opacity: _fadeAnimation,
-                      child: Padding(
-                        padding: const EdgeInsets.only(bottom: 32),
-                        child: Text(
-                          'Building connections that matter',
-                          style: textTheme.bodySmall,
+                    SizedBox(
+                      width: 26,
+                      height: 26,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          AppColors.gold.withValues(alpha: 0.9),
                         ),
                       ),
                     ),
+                    const SizedBox(height: 20),
+                    Text(
+                      'Building connections that matter',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 13,
+                        color: Colors.white.withValues(alpha: 0.6),
+                      ),
+                    ),
+                    const SizedBox(height: 32),
                   ],
                 ),
               ),

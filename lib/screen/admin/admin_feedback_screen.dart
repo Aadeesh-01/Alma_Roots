@@ -92,6 +92,7 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen> {
       ValueChanged<String?> onChanged) {
     return DropdownButtonFormField<String>(
       value: value,
+      isExpanded: true,
       decoration: InputDecoration(
         labelText: label,
         labelStyle:
@@ -105,7 +106,8 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen> {
       ),
       items: items
           .map((e) => DropdownMenuItem(
-              value: e, child: Text(e, style: theme.textTheme.bodyMedium)))
+              value: e,
+              child: Text(e, style: theme.textTheme.bodyMedium, overflow: TextOverflow.ellipsis)))
           .toList(),
       onChanged: onChanged,
     );

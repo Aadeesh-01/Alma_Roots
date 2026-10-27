@@ -16,7 +16,7 @@ class AdminDeletionQueueScreen extends StatefulWidget {
 class _AdminDeletionQueueScreenState extends State<AdminDeletionQueueScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  Future<void> _cancelDeletion(ThemeData theme, String targetUid, String targetEmail) async {
+  Future<void> _cancelDeletion(ThemeData theme, String targetUid, String targetEmail, String queueDocId) async {
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
 
@@ -43,6 +43,7 @@ class _AdminDeletionQueueScreenState extends State<AdminDeletionQueueScreen> {
         instituteId: widget.instituteId,
         targetUid: targetUid,
         targetEmail: targetEmail,
+        queueDocId: queueDocId,
       );
 
       if (!mounted) return;
@@ -55,7 +56,10 @@ class _AdminDeletionQueueScreenState extends State<AdminDeletionQueueScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(backgroundColor: Theme.of(context).colorScheme.error, content: Text('Error: $e')),
+        SnackBar(
+          backgroundColor: Theme.of(context).colorScheme.error,
+          content: Text('Could not cancel: ${e.toString().replaceAll('Exception: ', '')}'),
+        ),
       );
     }
   }
@@ -267,7 +271,7 @@ class _AdminDeletionQueueScreenState extends State<AdminDeletionQueueScreen> {
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
                         OutlinedButton(
-                          onPressed: () => _cancelDeletion(theme, targetUid, email),
+                          onPressed: () => _cancelDeletion(theme, targetUid, email, queueItems[index].id),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: colorScheme.onSurface,
                             side: BorderSide(color: theme.dividerColor),

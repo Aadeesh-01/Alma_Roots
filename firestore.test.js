@@ -76,6 +76,47 @@ describe("Firestore Security Rules", () => {
     await assertFails(db.collection('institutes').doc('test_inst').collection('chats').doc('chat2').get());
   });
 
+  it("Messaging (other participant can reply, participants in reversed order)", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('institutes').doc('test_inst').collection('chats').doc('alumni_uid_student_uid').set({
+        participants: ['student_uid', 'alumni_uid']
+      });
+    });
+    // Mirrors ChatService.sendDirectMessage: message + merge on the chat doc, sender first.
+    const db = testEnv.authenticatedContext('alumni_uid').firestore();
+    const chatRef = db.collection('institutes').doc('test_inst').collection('chats').doc('alumni_uid_student_uid');
+    const batch = db.batch();
+    batch.set(chatRef.collection('messages').doc(), { senderId: 'alumni_uid', text: 'reply' });
+    batch.set(chatRef, { participants: ['alumni_uid', 'student_uid'], readStatus: { alumni_uid: true, student_uid: false } }, { merge: true });
+    await assertSucceeds(batch.commit());
+  });
+
+  it("Messaging (original sender can keep sending)", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('institutes').doc('test_inst').collection('chats').doc('alumni_uid_student_uid').set({
+        participants: ['student_uid', 'alumni_uid']
+      });
+    });
+    const db = testEnv.authenticatedContext('student_uid').firestore();
+    const chatRef = db.collection('institutes').doc('test_inst').collection('chats').doc('alumni_uid_student_uid');
+    const batch = db.batch();
+    batch.set(chatRef.collection('messages').doc(), { senderId: 'student_uid', text: 'hello again' });
+    batch.set(chatRef, { participants: ['student_uid', 'alumni_uid'] }, { merge: true });
+    await assertSucceeds(batch.commit());
+  });
+
+  it("Messaging (cannot replace a participant on update)", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('institutes').doc('test_inst').collection('chats').doc('alumni_uid_student_uid').set({
+        participants: ['student_uid', 'alumni_uid']
+      });
+    });
+    const db = testEnv.authenticatedContext('student_uid').firestore();
+    const chatRef = db.collection('institutes').doc('test_inst').collection('chats').doc('alumni_uid_student_uid');
+    await assertFails(chatRef.set({ participants: ['student_uid', 'admin_uid'] }, { merge: true }));
+    await assertFails(chatRef.set({ participants: ['student_uid', 'alumni_uid', 'admin_uid'] }, { merge: true }));
+  });
+
   it("Student Profile edit (cannot change role)", async () => {
     const db = testEnv.authenticatedContext('student_uid').firestore();
     await assertFails(db.collection('institutes').doc('test_inst').collection('participants').doc('student_uid').update({
