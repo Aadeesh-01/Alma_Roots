@@ -1,7 +1,8 @@
 {
   "private": true,
   "scripts": {
-    "test:rules": "firebase emulators:exec --only firestore --project demo-cs261 \"mocha firestore.test.js --timeout 20000\""
+    "test:rules": "firebase emulators:exec --only firestore --project demo-cs261 \"mocha firestore.test.js --timeout 20000\"",
+    "test:storage": "firebase emulators:exec --only storage --project demo-cs261 \"mocha storage.test.js --timeout 30000\""
   },
   "dependencies": {
     "firebase": "^12.14.0"

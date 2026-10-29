@@ -17,7 +17,7 @@ Most findings below have since been fixed. The original text is kept for referen
 | S2 Public sign-up | **Your action**: disable "Enable create (sign-up)" in Firebase Auth settings |
 | S3 Cross-institute user creation | **Fixed and deployed.** Server-side check, plus the Add User screen is locked to your institute |
 | S4 Message edit/delete by the other participant | **Fixed and deployed.** Per-field message rules (10 new tests) |
-| S5–S9 Counters, visibility, post type, participant fields, Storage rules | Open |
+| S5–S9 Counters, visibility, post type, participant fields, Storage rules | **Fixed and deployed** (Batch 6; 42 rules tests, 6 Storage tests) |
 | S10 Demo credentials in the app | Open (kept for demos) |
 | S11 Personal data in logs | **Fixed.** Sensitive prints removed, the rest use `debugPrint`; `live_audit.js` deleted |
 | B1 Second participant couldn't reply | **Fixed and deployed** (rules compare participants as a set) |
@@ -25,18 +25,18 @@ Most findings below have since been fixed. The original text is kept for referen
 | B3 Admins couldn't reach Feed/Inbox | **Fixed.** Admin shell with Console / Feed / Inbox / Profile |
 | B4 Messages reset pin/mute/archive | **Fixed** |
 | B5 Tombstones shown as live users | **Fixed** (tombstones carry `isDeleted: true`; "Inactive" filter) |
-| B6 Duplicate `customId` | Open |
+| B6 Duplicate `customId` | **Fixed and deployed** (transactional per-institute counter) |
 | B7 Institute management broken | **Fixed** (read-only list) |
 | B8 Feed capped at 20 posts | **Fixed** ("Load older posts") |
-| B9 One-way RSVP / no waitlist promotion | **Fixed.** Cancel and leave-waitlist, plus automatic promotion (function written, needs deploy) |
+| B9 One-way RSVP / no waitlist promotion | **Fixed and deployed.** Cancel and leave-waitlist, plus automatic promotion |
 | B10 Bug reports role "unknown" | **Fixed** |
 | B11 Failing rules test | **Fixed.** 27/27 passing (`npm run test:rules`) |
 | B12 Scheduled deletions mislabelled in audit | **Fixed** (`AUTO_QUEUE_PROCESSING` by `system`) |
-| B13 Deletion uses device clock | Open |
-| B14 Partial rollback on user creation | Open |
-| B15–B19 Small UX bugs | **Fixed** (B17, the admin demo password vs README, still needs checking) |
+| B13 Deletion uses device clock | **Fixed and deployed** (`normalizeDeletionSchedule` sets server time + 24h) |
+| B14 Partial rollback on user creation | **Fixed and deployed** (documents written in one batch) |
+| B15–B19 Small UX bugs | **Fixed** (B17: the admin password is `123456`; README corrected) |
 | Auto-delete job not deployed | **Fixed and deployed.** Also skips users who were restored |
-| Push notifications | **Built and tested.** Functions need deploying (see Batch 4) |
+| Push notifications | **Built, tested and deployed** |
 | Dead code, unused packages, committed `node_modules` | **Removed**; `flutter analyze` reports no issues; widget test replaced (8 passing) |
 
 ---

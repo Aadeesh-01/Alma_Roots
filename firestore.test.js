@@ -184,6 +184,120 @@ describe("Firestore Security Rules", () => {
     });
   });
 
+  describe("Batch 6: post counters, visibility, editing and profile fields", () => {
+    const inst = (db) => db.collection('institutes').doc('test_inst');
+    const posts = (db) => inst(db).collection('posts');
+
+    beforeEach(async () => {
+      await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        const p = posts(ctx.firestore());
+        await p.doc('pub').set({ authorUid: 'alumni_uid', type: 'experience', visibility: 'public', title: 'Hi',
+          likeCount: 0, commentCount: 0, attendeeCount: 0, isPinned: false, status: 'published' });
+        await p.doc('alum').set({ authorUid: 'admin_uid', type: 'news', visibility: 'alumni_only', title: 'Alumni only',
+          likeCount: 0, commentCount: 0, attendeeCount: 0, isPinned: false });
+        await p.doc('ev').set({ authorUid: 'admin_uid', type: 'event', visibility: 'public', title: 'Meetup',
+          likeCount: 0, commentCount: 0, attendeeCount: 0, maxAttendees: 1, isPinned: false });
+      });
+    });
+
+    // S5: counters
+    it("like: +1 together with your own like record is allowed", async () => {
+      const db = testEnv.authenticatedContext('student_uid').firestore();
+      const batch = db.batch();
+      batch.set(posts(db).doc('pub').collection('likes').doc('student_uid'), { uid: 'student_uid' });
+      batch.update(posts(db).doc('pub'), { likeCount: 1 });
+      await assertSucceeds(batch.commit());
+    });
+    it("like: +1 without a like record is blocked", async () => {
+      const db = testEnv.authenticatedContext('student_uid').firestore();
+      await assertFails(posts(db).doc('pub').update({ likeCount: 1 }));
+    });
+    it("like: jumping the count to 500 is blocked", async () => {
+      const db = testEnv.authenticatedContext('student_uid').firestore();
+      const batch = db.batch();
+      batch.set(posts(db).doc('pub').collection('likes').doc('student_uid'), { uid: 'student_uid' });
+      batch.update(posts(db).doc('pub'), { likeCount: 500 });
+      await assertFails(batch.commit());
+    });
+    it("comments: count may only move by one", async () => {
+      const db = testEnv.authenticatedContext('student_uid').firestore();
+      await assertSucceeds(posts(db).doc('pub').update({ commentCount: 1 }));
+      await assertFails(posts(db).doc('pub').update({ commentCount: 40 }));
+    });
+    it("author cannot set their own like count", async () => {
+      const db = testEnv.authenticatedContext('alumni_uid').firestore();
+      await assertFails(posts(db).doc('pub').update({ likeCount: 99 }));
+    });
+    it("RSVP: taking a seat must count it, and respects capacity", async () => {
+      const student = testEnv.authenticatedContext('student_uid').firestore();
+      const b1 = student.batch();
+      b1.set(posts(student).doc('ev').collection('attendees').doc('student_uid'), { status: 'attending' });
+      b1.update(posts(student).doc('ev'), { attendeeCount: 1 });
+      await assertSucceeds(b1.commit());
+
+      const alumni = testEnv.authenticatedContext('alumni_uid').firestore();
+      const b2 = alumni.batch();
+      b2.set(posts(alumni).doc('ev').collection('attendees').doc('alumni_uid'), { status: 'attending' });
+      b2.update(posts(alumni).doc('ev'), { attendeeCount: 2 });
+      await assertFails(b2.commit()); // capacity is 1
+    });
+    it("RSVP: marking yourself attending without counting it is blocked", async () => {
+      const db = testEnv.authenticatedContext('student_uid').firestore();
+      await assertFails(posts(db).doc('ev').collection('attendees').doc('student_uid').set({ status: 'attending' }));
+    });
+    it("RSVP: joining the waitlist needs no count change", async () => {
+      const db = testEnv.authenticatedContext('student_uid').firestore();
+      await assertSucceeds(posts(db).doc('ev').collection('attendees').doc('student_uid').set({ status: 'waitlisted' }));
+    });
+
+    // S6: visibility
+    it("student cannot read an alumni-only post; alumni and admin can", async () => {
+      await assertFails(posts(testEnv.authenticatedContext('student_uid').firestore()).doc('alum').get());
+      await assertSucceeds(posts(testEnv.authenticatedContext('alumni_uid').firestore()).doc('alum').get());
+      await assertSucceeds(posts(testEnv.authenticatedContext('admin_uid').firestore()).doc('alum').get());
+    });
+    it("feed query must ask only for visible posts", async () => {
+      const db = testEnv.authenticatedContext('student_uid').firestore();
+      await assertSucceeds(posts(db).where('visibility', 'in', ['public', 'students_only']).get());
+      await assertFails(posts(db).get());
+      await assertFails(posts(db).where('visibility', 'in', ['public', 'alumni_only']).get());
+    });
+
+    // S7: editing
+    it("author can edit content and soft-delete", async () => {
+      const db = testEnv.authenticatedContext('alumni_uid').firestore();
+      await assertSucceeds(posts(db).doc('pub').update({ title: 'Updated', description: 'More' }));
+      await assertSucceeds(posts(db).doc('pub').update({ status: 'deleted' }));
+    });
+    it("author cannot turn their post into news or pin it", async () => {
+      const db = testEnv.authenticatedContext('alumni_uid').firestore();
+      await assertFails(posts(db).doc('pub').update({ type: 'news' }));
+      await assertFails(posts(db).doc('pub').update({ isPinned: true }));
+    });
+    it("new posts cannot start pinned or with fake counts", async () => {
+      const db = testEnv.authenticatedContext('student_uid').firestore();
+      await assertFails(posts(db).doc('x1').set({ authorUid: 'student_uid', type: 'experience', isPinned: true }));
+      await assertFails(posts(db).doc('x2').set({ authorUid: 'student_uid', type: 'experience', likeCount: 50 }));
+    });
+
+    // S8: profile fields
+    it("user can edit their profile fields, tokens and notification settings", async () => {
+      const db = testEnv.authenticatedContext('student_uid').firestore();
+      const me = inst(db).collection('participants').doc('student_uid');
+      await assertSucceeds(me.update({ bio: 'Hello', department: 'CS', isProfileComplete: true }));
+      await assertSucceeds(me.set({ fcmTokens: ['tok1'] }, { merge: true }));
+      await assertSucceeds(me.update({ 'notificationPrefs.messages': false }));
+    });
+    it("user cannot edit admin-managed fields", async () => {
+      const db = testEnv.authenticatedContext('student_uid').firestore();
+      const me = inst(db).collection('participants').doc('student_uid');
+      await assertFails(me.update({ customId: 's1' }));
+      await assertFails(me.update({ pendingPermanentDeletion: false }));
+      await assertFails(me.update({ email: 'someone@else.com' }));
+      await assertFails(me.update({ status: 'active', role: 'admin' }));
+    });
+  });
+
   it("Student Profile edit (cannot change role)", async () => {
     const db = testEnv.authenticatedContext('student_uid').firestore();
     await assertFails(db.collection('institutes').doc('test_inst').collection('participants').doc('student_uid').update({

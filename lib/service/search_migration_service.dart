@@ -5,6 +5,24 @@ import 'package:cs261_project/service/search_service.dart';
 class SearchMigrationService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
+  /// Marks posts created before visibility existed as public. Feed queries filter on
+  /// `visibility`, so posts without the field would otherwise be hidden from members.
+  /// Returns how many posts were repaired.
+  static Future<int> backfillPostVisibility(String instituteId) async {
+    final posts = await _firestore.collection('institutes').doc(instituteId).collection('posts').get();
+    final missing = posts.docs.where((d) => d.data()['visibility'] == null).toList();
+
+    for (var i = 0; i < missing.length; i += 400) {
+      final batch = _firestore.batch();
+      for (final doc in missing.skip(i).take(400)) {
+        batch.update(doc.reference, {'visibility': 'public'});
+      }
+      await batch.commit();
+    }
+    debugPrint("🛠 [REPAIR] Set visibility on ${missing.length} older post(s).");
+    return missing.length;
+  }
+
   /// Batch migrates all legacy participants in an institute by generating and backfilling
   /// the 'searchKeywords' array. This ensures all legacy users become searchable.
   static Future<void> migrateInstituteParticipants(String instituteId) async {

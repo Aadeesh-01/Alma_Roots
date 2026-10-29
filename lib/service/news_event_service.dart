@@ -12,10 +12,31 @@ class NewsEventService {
     await _postsRef(post.instituteId).add(post.toMap());
   }
 
+  /// Post visibilities a role may read; null means everything (admins).
+  /// Must match visibleTo() in firestore.rules, which rejects queries that
+  /// could return posts the user isn't allowed to see.
+  static List<String>? visibilitiesFor(String role) {
+    switch (role) {
+      case 'admin':
+        return null;
+      case 'alumni':
+        return const ['public', 'alumni_only'];
+      default:
+        return const ['public', 'students_only'];
+    }
+  }
+
   /// Streams the newest [limit] posts; callers page by asking for a larger limit.
   /// Pass [includeDeleted] to get the raw page (e.g. to tell whether more pages exist).
-  Stream<List<NewsEventPost>> getPosts(String instituteId, {int limit = 20, bool includeDeleted = false}) {
-    return _postsRef(instituteId)
+  /// Pass the reader's [role] so the query only asks for posts they may see.
+  Stream<List<NewsEventPost>> getPosts(String instituteId,
+      {required String role, int limit = 20, bool includeDeleted = false}) {
+    Query query = _postsRef(instituteId);
+    final visibilities = visibilitiesFor(role);
+    if (visibilities != null) {
+      query = query.where('visibility', whereIn: visibilities);
+    }
+    return query
         .orderBy('isPinned', descending: true)
         .orderBy('createdAt', descending: true)
         .limit(limit)

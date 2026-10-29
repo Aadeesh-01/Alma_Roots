@@ -1,6 +1,6 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
-const { onDocumentCreated, onDocumentUpdated } = require("firebase-functions/v2/firestore");
+const { onDocumentCreated, onDocumentUpdated, onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { logger } = require("firebase-functions");
 const admin = require("firebase-admin");
 
@@ -21,6 +21,46 @@ async function assertInstituteAdmin(auth, instituteId) {
   if (!p || p.role !== "admin" || p.isDeleted === true || (p.status && p.status !== "active")) {
     throw new HttpsError("permission-denied", "Only admins of this institute can do this.");
   }
+}
+
+// Mirrors SearchService.generateSearchKeywords in the app: every prefix of the whole
+// lower-cased text plus every prefix of each word ("John Doe" -> j, jo, ..., d, do, doe).
+function searchKeywordsFor(text) {
+  const lower = String(text || "").toLowerCase().trim();
+  if (!lower) return [];
+  const out = new Set();
+  for (let i = 1; i <= lower.length; i++) out.add(lower.slice(0, i));
+  for (const word of lower.split(/\s+/)) {
+    for (let i = 1; i <= word.length; i++) out.add(word.slice(0, i));
+  }
+  return [...out];
+}
+
+// Hands out sequential customIds (s1, s2 ... / a1 ... / ad1 ...) from a per-institute
+// counter in a transaction, so concurrent creations never collide. The first time a
+// prefix is used, the counter starts after the highest existing ID with that prefix.
+async function nextCustomId(instituteId, role) {
+  const prefix = role === "alumni" ? "a" : role === "admin" ? "ad" : "s";
+  const db = admin.firestore();
+  const instituteRef = db.collection("institutes").doc(instituteId);
+  const counterRef = instituteRef.collection("meta").doc("counters");
+
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(counterRef);
+    let last = snap.exists ? snap.get(prefix) : undefined;
+    if (typeof last !== "number") {
+      const existing = await tx.get(instituteRef.collection("participants").select("customId"));
+      const pattern = new RegExp(`^${prefix}(\\d+)$`);
+      last = 0;
+      existing.forEach((d) => {
+        const m = pattern.exec(d.get("customId") || "");
+        if (m) last = Math.max(last, parseInt(m[1], 10));
+      });
+    }
+    const next = last + 1;
+    tx.set(counterRef, { [prefix]: next }, { merge: true });
+    return `${prefix}${next}`;
+  });
 }
 
 // ========================== CREATE PARTICIPANT ACCOUNT ==========================
@@ -70,30 +110,22 @@ exports.createParticipantAccount = onCall(
         });
         uid = userRecord.uid;
 
-        const participantsRef = admin
-          .firestore()
-          .collection("institutes")
-          .doc(instituteId)
-          .collection("participants");
+        const db = admin.firestore();
+        const instituteRef = db.collection("institutes").doc(instituteId);
+        const participantsRef = instituteRef.collection("participants");
 
-        // Generate custom ID based on role
-        const prefix = role === "alumni" ? "a" : role === "admin" ? "ad" : "s";
-        const snapshot = await participantsRef.orderBy("customId", "desc").limit(1).get();
+        const nextId = await nextCustomId(instituteId, role);
 
-        let nextId = `${prefix}1`;
-        if (!snapshot.empty) {
-          const lastId = snapshot.docs[0].data().customId;
-          const lastNum = parseInt(lastId?.replace(/\D/g, "")) || 0;
-          nextId = `${prefix}${lastNum + 1}`;
+        // Same prefix keywords the app builds, so new users are searchable immediately.
+        const searchKeywords = Array.from(new Set(
+          [name || "", email, role, year || ""].flatMap(searchKeywordsFor)
+        ));
+
+        // Set the admin claim before writing documents: if anything below fails,
+        // the catch block deletes the Auth user and no partial account remains.
+        if (role === "admin") {
+          await admin.auth().setCustomUserClaims(uid, { role: "admin" });
         }
-
-        // Generate search keywords
-        const searchKeywords = Array.from(new Set([
-          ...email.split('@')[0].split(/[._+-]/),
-          role,
-          instituteId,
-          email
-        ].filter(k => k.length > 0).map(k => k.toLowerCase())));
 
         const participantData = {
           uid,
@@ -110,38 +142,26 @@ exports.createParticipantAccount = onCall(
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
         };
 
-        await participantsRef.doc(uid).set(participantData);
-
-        // Create profile inside same institute
-        await admin
-          .firestore()
-          .collection("institutes")
-          .doc(instituteId)
-          .collection("profiles")
-          .doc(uid)
-          .set({
-            uid,
-            email,
-            instituteId,
-            name: name || "",
-            role,
-            isProfileComplete: false,
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          });
-
-        // Audit Logging
-        await admin.firestore().collection("institutes").doc(instituteId).collection("admin_actions").doc().set({
+        // Participant, legacy profile and audit entry are written atomically.
+        const batch = db.batch();
+        batch.set(participantsRef.doc(uid), participantData);
+        batch.set(instituteRef.collection("profiles").doc(uid), {
+          uid,
+          email,
+          instituteId,
+          name: name || "",
+          role,
+          isProfileComplete: false,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        batch.set(instituteRef.collection("admin_actions").doc(), {
           action: "USER_CREATED",
           targetUid: uid,
           targetEmail: email,
           adminUid: auth.uid,
           timestamp: admin.firestore.FieldValue.serverTimestamp(),
         });
-
-        // If admin role, assign admin claim
-        if (role === "admin") {
-          await admin.auth().setCustomUserClaims(uid, { role: "admin" });
-        }
+        await batch.commit();
 
         return {
           success: true,
@@ -629,5 +649,39 @@ exports.notifyReactivationDecision = onDocumentUpdated(
         ? { title: "Welcome back to Alma Roots", body: "Your account has been reactivated. You can sign in again." }
         : { title: "Reactivation request update", body: "Your request was reviewed and not approved. Contact your institute admin for details." },
       { type: "account" });
+  }
+);
+
+// ========================== DELETION SCHEDULE USES SERVER TIME ==========================
+// The app computes scheduledFor from the device clock, which can be wrong. Whenever an
+// entry becomes pending (new, or re-scheduled after a cancel), reset the deadline to
+// server time + 24h on both the queue entry and the participant.
+const GRACE_PERIOD_MS = 24 * 60 * 60 * 1000;
+
+exports.normalizeDeletionSchedule = onDocumentWritten(
+  { document: "institutes/{instId}/deletion_queue/{entryId}", region: TRIGGER_REGION },
+  async (event) => {
+    const before = event.data.before.exists ? event.data.before.data() : null;
+    const after = event.data.after.exists ? event.data.after.data() : null;
+    if (!after || after.status !== "pending") return;
+    if (before && before.status === "pending") return; // already normalized; avoids loops
+
+    const writtenAt = event.data.after.updateTime || admin.firestore.Timestamp.now();
+    const scheduledFor = admin.firestore.Timestamp.fromMillis(writtenAt.toMillis() + GRACE_PERIOD_MS);
+
+    const { instId, entryId } = event.params;
+    const uid = after.uid || entryId;
+    const batch = admin.firestore().batch();
+    batch.update(event.data.after.ref, { scheduledFor, requestedAt: writtenAt });
+    const participantRef = participantsRef(instId).doc(uid);
+    const participantSnap = await participantRef.get();
+    if (participantSnap.exists) {
+      batch.update(participantRef, {
+        permanentDeletionScheduledFor: scheduledFor,
+        permanentDeletionRequestedAt: writtenAt,
+      });
+    }
+    await batch.commit();
+    logger.info(`normalizeDeletionSchedule: ${uid} scheduled for ${scheduledFor.toDate().toISOString()}`);
   }
 );

@@ -39,16 +39,20 @@ class _NewsEventScreenState extends State<NewsEventScreen> with SingleTickerProv
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
-    _postsStream = _service.getPosts(widget.instituteId, limit: _postLimit, includeDeleted: true);
+    // The posts query depends on the role (see NewsEventService.visibilitiesFor),
+    // so it starts once the role is known.
     _fetchUserRole();
   }
 
   void _loadMore() {
     setState(() {
       _postLimit += _pageSize;
-      _postsStream = _service.getPosts(widget.instituteId, limit: _postLimit, includeDeleted: true);
+      _postsStream = _streamPosts();
     });
   }
+
+  Stream<List<NewsEventPost>> _streamPosts() =>
+      _service.getPosts(widget.instituteId, role: _userRole, limit: _postLimit, includeDeleted: true);
 
   Future<void> _fetchUserRole() async {
     if (_currentUser == null) return;
@@ -71,11 +75,17 @@ class _NewsEventScreenState extends State<NewsEventScreen> with SingleTickerProv
       if (mounted) {
         setState(() {
           _userRole = roleStr;
+          _postsStream = _streamPosts();
           _isLoadingRole = false;
         });
       }
     } catch (e) {
-      if (mounted) setState(() => _isLoadingRole = false);
+      if (mounted) {
+        setState(() {
+          _postsStream = _streamPosts();
+          _isLoadingRole = false;
+        });
+      }
     }
   }
 

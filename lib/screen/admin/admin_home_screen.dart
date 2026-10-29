@@ -275,7 +275,15 @@ class _AdminConsoleState extends State<_AdminConsole> {
     setState(() => _isMigrating = true);
     try {
       await SearchMigrationService.migrateInstituteParticipants(widget.instituteId);
-      if (mounted) AppSnackBar.showSuccess(context, 'Search index rebuilt for all members.');
+      final fixedPosts = await SearchMigrationService.backfillPostVisibility(widget.instituteId);
+      if (mounted) {
+        AppSnackBar.showSuccess(
+          context,
+          fixedPosts == 0
+              ? 'Search index rebuilt. All posts were already up to date.'
+              : 'Search index rebuilt and $fixedPosts older post(s) repaired.',
+        );
+      }
     } catch (e) {
       if (mounted) AppSnackBar.showError(context, 'Rebuild failed: $e');
     } finally {
@@ -357,8 +365,8 @@ class _AdminConsoleState extends State<_AdminConsole> {
           theme,
           stream: null,
           icon: Icons.manage_search_rounded,
-          title: 'Rebuild search index',
-          subtitle: 'Fix members who don\'t show up in search',
+          title: 'Repair data',
+          subtitle: 'Rebuild search and fix older posts members can\'t see',
           onTap: _isMigrating ? null : _runSearchMigration,
           trailing: _isMigrating
               ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))

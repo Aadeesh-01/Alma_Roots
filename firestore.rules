@@ -43,13 +43,16 @@ service cloud.firestore {
       match /participants/{userId} {
         allow read: if request.auth.uid == userId || isActiveMember(instId) || isAdmin(instId);
         
+        // Users may only change their own profile fields; role, status, deletion
+        // flags, email and customId are managed by admins and Cloud Functions.
         allow update: if isAdmin(instId) || (
           request.auth.uid == userId && isActiveMember(instId) &&
-          // PREVENT PRIVILEGE ESCALATION
-          request.resource.data.get('role', resource.data.get('role', 'student')) == resource.data.get('role', 'student') &&
-          request.resource.data.get('status', resource.data.get('status', 'active')) == resource.data.get('status', 'active') &&
-          request.resource.data.get('isDeleted', resource.data.get('isDeleted', false)) == resource.data.get('isDeleted', false) &&
-          request.resource.data.get('instituteId', resource.data.get('instituteId', instId)) == resource.data.get('instituteId', instId)
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'name', 'rollNo', 'year', 'interest', 'bio', 'company', 'department',
+            'profileImage', 'isProfileComplete', 'searchKeywords',
+            'isMentor', 'isHiring', 'openToNetworking',
+            'fcmTokens', 'notificationPrefs', 'updatedAt'
+          ])
         );
 
         allow create, delete: if isAdmin(instId);
@@ -59,27 +62,73 @@ service cloud.firestore {
       // POSTS (News & Events)
       // ==========================================
       match /posts/{postId} {
-        allow read: if isActiveMember(instId) || isAdmin(instId);
-        
-        allow create: if isActiveMember(instId) && 
+        // Visibilities a non-admin may read; feed queries must filter on these
+        // (`visibility in [...]`) or Firestore rejects the query.
+        function visibleTo() {
+          let role = getParticipant(instId).get('role', 'student');
+          return role == 'alumni' ? ['public', 'alumni_only'] : ['public', 'students_only'];
+        }
+        function changed() {
+          return request.resource.data.diff(resource.data).affectedKeys();
+        }
+        function delta(field) {
+          return request.resource.data.get(field, 0) - resource.data.get(field, 0);
+        }
+        // likeCount moves by one only together with your own like record.
+        function likeStepOk() {
+          let like = /databases/$(database)/documents/institutes/$(instId)/posts/$(postId)/likes/$(request.auth.uid);
+          return delta('likeCount') == 0 ||
+            (delta('likeCount') == 1 && !exists(like) && existsAfter(like)) ||
+            (delta('likeCount') == -1 && exists(like) && !existsAfter(like));
+        }
+        // attendeeCount moves by one only when your own RSVP changes, within capacity.
+        function attendeeStepOk() {
+          let rsvp = /databases/$(database)/documents/institutes/$(instId)/posts/$(postId)/attendees/$(request.auth.uid);
+          let wasGoing = exists(rsvp) && get(rsvp).data.get('status', '') == 'attending';
+          let isGoing = existsAfter(rsvp) && getAfter(rsvp).data.get('status', '') == 'attending';
+          let cap = request.resource.data.get('maxAttendees', null);
+          return delta('attendeeCount') == 0 ||
+            (delta('attendeeCount') == 1 && !wasGoing && isGoing &&
+              (cap == null || request.resource.data.get('attendeeCount', 0) <= cap)) ||
+            (delta('attendeeCount') == -1 && wasGoing && !isGoing);
+        }
+        function counterUpdateOk() {
+          return changed().hasOnly(['likeCount', 'commentCount', 'attendeeCount']) &&
+            likeStepOk() && attendeeStepOk() &&
+            delta('commentCount') in [-1, 0, 1];
+        }
+        // Authors edit content; type stays student/alumni-postable and pinning stays admin-only.
+        function authorEditOk() {
+          return resource.data.get('authorUid', '') == request.auth.uid &&
+            changed().hasOnly([
+              'title', 'description', 'category', 'visibility', 'searchKeywords', 'type',
+              'eventDate', 'eventLocation', 'registrationRequired', 'maxAttendees',
+              'waitlistEnabled', 'status', 'updatedAt'
+            ]) &&
+            request.resource.data.get('type', '') in ['experience', 'event'] &&
+            request.resource.data.get('status', 'published') in ['published', 'deleted'];
+        }
+
+        allow read: if isAdmin(instId) ||
+          (isActiveMember(instId) && resource.data.visibility in visibleTo());
+
+        allow create: if isActiveMember(instId) &&
           request.resource.data.get('authorUid', '') == request.auth.uid && (
             isAdmin(instId) ||
-            (getParticipant(instId).get('role', '') in ['student', 'alumni'] && request.resource.data.get('type', '') in ['experience', 'event'])
+            (getParticipant(instId).get('role', '') in ['student', 'alumni'] &&
+             request.resource.data.get('type', '') in ['experience', 'event'] &&
+             request.resource.data.get('isPinned', false) == false &&
+             request.resource.data.get('likeCount', 0) == 0 &&
+             request.resource.data.get('commentCount', 0) == 0 &&
+             request.resource.data.get('attendeeCount', 0) == 0)
           );
-        
+
         allow update: if isAdmin(instId) || (
-          isActiveMember(instId) && (
-            // Author can update post content (but not authorship)
-            (resource.data.get('authorUid', '') == request.auth.uid &&
-             request.resource.data.get('authorUid', '') == resource.data.get('authorUid', ''))
-            ||
-            // Any active member can increment/decrement engagement counters during transactions
-            (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount', 'commentCount', 'attendeeCount']))
-          )
+          isActiveMember(instId) && (authorEditOk() || counterUpdateOk())
         );
-        
+
         allow delete: if isAdmin(instId) || (isActiveMember(instId) && resource.data.get('authorUid', '') == request.auth.uid);
-        
+
         match /comments/{commentId} {
           allow read: if isActiveMember(instId) || isAdmin(instId);
           allow create: if isActiveMember(instId) && request.resource.data.get('uid', '') == request.auth.uid;
@@ -99,7 +148,21 @@ service cloud.firestore {
 
         match /attendees/{userId} {
           allow read: if isActiveMember(instId) || isAdmin(instId);
-          allow write: if isActiveMember(instId) && request.auth.uid == userId;
+          // Becoming or leaving "attending" must move attendeeCount in the same write,
+          // so nobody can take a seat without it counting toward capacity.
+          allow create, update: if isActiveMember(instId) && request.auth.uid == userId &&
+            request.resource.data.get('status', '') in ['attending', 'waitlisted', 'declined'] &&
+            (
+              (resource == null || resource.data.get('status', '') != 'attending') ==
+                (request.resource.data.status != 'attending') ||
+              (request.resource.data.status == 'attending' &&
+                getAfter(/databases/$(database)/documents/institutes/$(instId)/posts/$(postId)).data.get('attendeeCount', 0) ==
+                  get(/databases/$(database)/documents/institutes/$(instId)/posts/$(postId)).data.get('attendeeCount', 0) + 1) ||
+              (request.resource.data.status != 'attending' &&
+                getAfter(/databases/$(database)/documents/institutes/$(instId)/posts/$(postId)).data.get('attendeeCount', 0) ==
+                  get(/databases/$(database)/documents/institutes/$(instId)/posts/$(postId)).data.get('attendeeCount', 0) - 1)
+            );
+          allow delete: if false;
         }
       }
       

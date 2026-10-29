@@ -698,7 +698,8 @@ class _ChatScreenState extends State<ChatScreen> {
                     !_isOtherUserDeleted)
                   Builder(builder: (context) {
                     List<String> common = [];
-                    if (_myProfile!.department != null &&
+                    // Saved profiles store "" for an unset department, so require a value.
+                    if ((_myProfile!.department ?? '').trim().isNotEmpty &&
                         _myProfile!.department == _otherProfile!.department) {
                       common.add("Same department");
                     }

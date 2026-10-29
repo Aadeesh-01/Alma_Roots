@@ -43,7 +43,17 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
       _profileStream = ProfileService(instituteId: widget.instituteId).getProfileStream(uid);
       _inboxStream = ChatService.streamInbox(widget.instituteId, uid);
     }
-    _postsStream = _newsService.getPosts(widget.instituteId);
+  }
+
+  /// Posts query for [role]; rebuilt only when the role changes (it decides which
+  /// visibilities the query may ask for).
+  String? _postsRole;
+  Stream<List<NewsEventPost>> _postsFor(String role) {
+    if (_postsStream == null || _postsRole != role) {
+      _postsRole = role;
+      _postsStream = _newsService.getPosts(widget.instituteId, role: role);
+    }
+    return _postsStream!;
   }
 
   String _greeting() {
@@ -98,7 +108,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
 
         return RefreshIndicator(
           onRefresh: () async => setState(() {
-            _postsStream = _newsService.getPosts(widget.instituteId);
+            _postsStream = _newsService.getPosts(widget.instituteId, role: role);
           }),
           child: ListView(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
@@ -111,7 +121,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
               AppSpacing.gapLg,
               _buildInboxSummary(),
               StreamBuilder<List<NewsEventPost>>(
-                stream: _postsStream,
+                stream: profile == null ? null : _postsFor(role),
                 builder: (context, snap) {
                   final posts = (snap.data ?? []).where((p) => _isVisible(p, role)).toList();
                   final now = DateTime.now();

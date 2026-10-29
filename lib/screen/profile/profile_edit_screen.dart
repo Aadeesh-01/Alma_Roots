@@ -98,7 +98,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
 
       final storageRef = FirebaseStorage.instance
           .ref('profile_pictures/${user.uid}/avatar.jpg');
-      await storageRef.putFile(file);
+      // storage.rules only accept images, so state the type explicitly.
+      await storageRef.putFile(file, SettableMetadata(contentType: 'image/jpeg'));
       final downloadUrl = await storageRef.getDownloadURL();
 
       setState(() {
@@ -182,6 +183,16 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                 _pickAndUploadImage(ImageSource.camera);
               },
             ),
+            if (_profilePicUrl?.isNotEmpty == true)
+              ListTile(
+                leading: Icon(Icons.hide_image_outlined, color: colorScheme.error),
+                title: Text('Remove photo', style: textTheme.bodyLarge?.copyWith(color: colorScheme.error)),
+                subtitle: const Text('Your initials are shown instead. Save to apply.'),
+                onTap: () {
+                  Navigator.pop(context);
+                  setState(() => _profilePicUrl = null);
+                },
+              ),
           ],
         ),
       ),
